@@ -45,7 +45,7 @@ jq_bool() {
 
 text_bool() {
   local pattern=$1 file=$2
-  if grep -Fq "$pattern" "$file"; then printf true; else printf false; fi
+  if grep -Fq -- "$pattern" "$file"; then printf true; else printf false; fi
 }
 
 variant_property=$(jq_bool 'any(.component.properties[];.figma_property=="Variant" and .figma_value=="Primary" and .code_property=="variant" and .code_value=="primary" and .code_type=="enum")' "$code_connect")
@@ -121,23 +121,23 @@ jq -S -n \
   [
     (if $variant_property and $variant_edge and $button_symbol and $variant_source then
       matched("figma-variant-implemented-by-code";"FIGMA:Variant=Primary";"CODE:ButtonProps.variant=primary";4)
-     elif $variant_property and (not $variant_edge) then
+     elif $variant_property and ($variant_edge | not) then
       unknown("figma-variant-implemented-by-code";"FIGMA:Variant=Primary";"CODE:ButtonProps.variant=primary";"NAME_ONLY_MATCH_FORBIDDEN";"PROVIDE_EXPLICIT_LINEAGE_EDGE";3)
-     elif not $variant_property then
+     elif ($variant_property | not) then
       unknown("figma-variant-implemented-by-code";"FIGMA:Variant=Primary";"CODE:ButtonProps.variant=primary";"CODE_CONNECT_PROPERTY_UNAVAILABLE";"PROVIDE_CODE_CONNECT_PROPERTY";2)
      else mismatch("figma-variant-implemented-by-code";"FIGMA:Variant=Primary";"CODE:ButtonProps.variant=primary";"UNRESOLVED_CONTRADICTION";"CODE_SOURCE_BINDING_MISMATCH";2) end),
     (if $disabled_property and $disabled_edge and $button_symbol and $disabled_source then
       matched("figma-disabled-implemented-by-code";"FIGMA:Disabled=true";"CODE:ButtonProps.disabled=true";4)
-     elif $disabled_property and (not $disabled_edge) then
+     elif $disabled_property and ($disabled_edge | not) then
       unknown("figma-disabled-implemented-by-code";"FIGMA:Disabled=true";"CODE:ButtonProps.disabled=true";"NAME_ONLY_MATCH_FORBIDDEN";"PROVIDE_EXPLICIT_LINEAGE_EDGE";3)
-     elif not $disabled_property then
+     elif ($disabled_property | not) then
       unknown("figma-disabled-implemented-by-code";"FIGMA:Disabled=true";"CODE:ButtonProps.disabled=true";"CODE_CONNECT_PROPERTY_UNAVAILABLE";"PROVIDE_CODE_CONNECT_PROPERTY";2)
      else mismatch("figma-disabled-implemented-by-code";"FIGMA:Disabled=true";"CODE:ButtonProps.disabled=true";"UNRESOLVED_CONTRADICTION";"CODE_SOURCE_BINDING_MISMATCH";2) end),
     (if $action_alias and $action_token_edge and $action_use_edge and $action_css and $action_code then
       matched("action-token-used-by-button";"DTCG:/color/action";"CODE:Button.background";5)
-     elif not $action_alias then
+     elif ($action_alias | not) then
       mismatch("action-token-used-by-button";"DTCG:/color/action";"CODE:Button.background";"UNRESOLVED_CONTRADICTION";"DTCG_ALIAS_TARGET_MISSING";4)
-     elif (not $action_token_edge) or (not $action_use_edge) then
+     elif ($action_token_edge | not) or ($action_use_edge | not) then
       unknown("action-token-used-by-button";"DTCG:/color/action";"CODE:Button.background";"EXPLICIT_LINEAGE_EDGE_UNAVAILABLE";"PROVIDE_EXPLICIT_LINEAGE_EDGE";3)
      else mismatch("action-token-used-by-button";"DTCG:/color/action";"CODE:Button.background";"UNRESOLVED_CONTRADICTION";"GENERATED_OR_CODE_USE_MISMATCH";3) end),
     (if $radius_token and $radius_ios and $radius_edge and $reviewed_difference then
