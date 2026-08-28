@@ -67,3 +67,17 @@ schema and remain `NOT_AVAILABLE`; cross-format design semantics remain
 
 See `docs/rfcs/design-evidence-v1.md` for the decision model and exclusions.
 Read-only design-to-code semantic evidence evaluated with released Gooo
+
+## Canonical relation matcher
+
+The additive matcher vertical slice emits four deterministic relation tuples
+for the same Button fixture. Three explicit implementation chains are MATCH.
+The iOS radius difference remains MISMATCH but is closed by its reviewed,
+owned, and expiring difference evidence. Missing Code Connect evidence and
+name-only similarity remain typed UNKNOWN; a broken token alias is REFUTED.
+
+Relation state and aggregate claim state are intentionally separate. A
+reviewed MISMATCH can be known and closed, while an unresolved contradiction
+cannot. All twelve matcher acceptance cells are declared in
+`examples/design-code-match/main.gooo` and bound through the released Gooo
+semantic graph.

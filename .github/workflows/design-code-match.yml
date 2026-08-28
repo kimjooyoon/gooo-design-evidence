@@ -1,0 +1,198 @@
+name: Design-code relation matcher
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: design-code-match-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  observation:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+
+      - name: Download immutable Gooo v0.3 compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          lock=contracts/core-release-lock-v3.json
+          repository=$(jq -r .repository "$lock")
+          tag=$(jq -r .tag "$lock")
+          ref=$(gh api "repos/$repository/git/ref/tags/$tag")
+          test "$(jq -r .object.type <<<"$ref")" = "$(jq -r .ref_type "$lock")"
+          test "$(jq -r .object.sha <<<"$ref")" = "$(jq -r .tag_object_sha "$lock")"
+          test "$(jq -r .object.sha <<<"$ref")" = "$(jq -r .target_commit_sha "$lock")"
+          release=$(gh api "repos/$repository/releases/tags/$tag")
+          asset_id=$(jq -r .asset.id "$lock")
+          asset_name=$(jq -r .asset.name "$lock")
+          asset_size=$(jq -r .asset.size "$lock")
+          digest=$(jq -r .asset.sha256 "$lock")
+          test "$(jq -r --arg name "$asset_name" '.assets[]|select(.name==$name)|.id' <<<"$release")" = "$asset_id"
+          test "$(jq -r --arg name "$asset_name" '.assets[]|select(.name==$name)|.size' <<<"$release")" = "$asset_size"
+          gh api -H 'Accept: application/octet-stream' "repos/$repository/releases/assets/$asset_id" > "$RUNNER_TEMP/gooo.tar.gz"
+          printf '%s  %s\n' "$digest" "$RUNNER_TEMP/gooo.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/core"
+          tar -xzf "$RUNNER_TEMP/gooo.tar.gz" -C "$RUNNER_TEMP/core"
+
+      - name: Bind all matcher cells to released Gooo activities
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=examples/design-code-match/main.gooo
+          denominator=contracts/design-code-match-denominator-v1.json
+          gooo="$RUNNER_TEMP/core/gooo"
+          "$gooo" check --json "$source" > "$RUNNER_TEMP/matcher-syntax.json"
+          "$gooo" check --semantic --json "$source" > "$RUNNER_TEMP/matcher-semantic.json"
+          "$gooo" graph dump "$source" > "$RUNNER_TEMP/matcher-graph.json"
+          jq -e '.status=="ok"' "$RUNNER_TEMP/matcher-syntax.json" "$RUNNER_TEMP/matcher-semantic.json" >/dev/null
+          jq -e --slurpfile denominator "$denominator" '
+            . as $graph |
+            .schema_version=="gooo-graph/v1" and
+            ([$graph.nodes[]|select(.kind=="Activity")]|length)==12 and
+            ([$denominator[0].cells[] as $cell |
+              select(([$graph.nodes[]|select(.kind=="Activity" and .name==$cell.activity)]|length)==1)
+            ]|length)==12
+          ' "$RUNNER_TEMP/matcher-graph.json" >/dev/null
+
+      - name: Match explicit relations and preserve adverse states
+        shell: bash
+        run: |
+          set -euo pipefail
+          matcher=scripts/match-design-code.sh
+          graph="$RUNNER_TEMP/matcher-graph.json"
+          denominator=contracts/design-code-match-denominator-v1.json
+          before="$RUNNER_TEMP/repository-before.bin"
+          after="$RUNNER_TEMP/repository-after.bin"
+          git status --porcelain=v1 -z --untracked-files=all > "$before"
+
+          start_ns=$(date +%s%N)
+          /usr/bin/time -f '%M' -o "$RUNNER_TEMP/matcher-rss" \
+            bash "$matcher" "$graph" "$denominator" fixtures/button-system "$RUNNER_TEMP/matcher-normal.json" "$SUBJECT_SHA" normal
+          end_ns=$(date +%s%N)
+          wall_ms=$(( (end_ns-start_ns)/1000000 ))
+          bash "$matcher" "$graph" "$denominator" fixtures/button-system "$RUNNER_TEMP/matcher-replay.json" "$SUBJECT_SHA" normal
+          cmp -s "$RUNNER_TEMP/matcher-normal.json" "$RUNNER_TEMP/matcher-replay.json"
+
+          cp -R fixtures/button-system "$RUNNER_TEMP/missing-code-connect"
+          jq '.component.properties|=map(select(.figma_property!="Disabled"))' "$RUNNER_TEMP/missing-code-connect/code-connect.json" > "$RUNNER_TEMP/missing-code-connect/next.json"
+          mv "$RUNNER_TEMP/missing-code-connect/next.json" "$RUNNER_TEMP/missing-code-connect/code-connect.json"
+          bash "$matcher" "$graph" "$denominator" "$RUNNER_TEMP/missing-code-connect" "$RUNNER_TEMP/matcher-unknown.json" "$SUBJECT_SHA" missing-code-connect
+
+          cp -R fixtures/button-system "$RUNNER_TEMP/name-only"
+          jq '.edges|=map(select(.id!="edge-figma-variant-code-prop"))' "$RUNNER_TEMP/name-only/lineage.json" > "$RUNNER_TEMP/name-only/next.json"
+          mv "$RUNNER_TEMP/name-only/next.json" "$RUNNER_TEMP/name-only/lineage.json"
+          bash "$matcher" "$graph" "$denominator" "$RUNNER_TEMP/name-only" "$RUNNER_TEMP/matcher-name-only.json" "$SUBJECT_SHA" name-only
+
+          cp -R fixtures/button-system "$RUNNER_TEMP/broken-alias"
+          jq '.color.action["$value"]="{color.missing}"' "$RUNNER_TEMP/broken-alias/tokens.json" > "$RUNNER_TEMP/broken-alias/next.json"
+          mv "$RUNNER_TEMP/broken-alias/next.json" "$RUNNER_TEMP/broken-alias/tokens.json"
+          bash "$matcher" "$graph" "$denominator" "$RUNNER_TEMP/broken-alias" "$RUNNER_TEMP/matcher-refuted.json" "$SUBJECT_SHA" broken-alias
+
+          git status --porcelain=v1 -z --untracked-files=all > "$after"
+          if cmp -s "$before" "$after"; then writes=0; else writes=1; fi
+          jq -S -n \
+            --argjson peak_rss_kib "$(cat "$RUNNER_TEMP/matcher-rss")" \
+            --argjson wall_ms "$wall_ms" \
+            --argjson writes "$writes" '
+            {schema:"gooo/design-code-match-runtime/v1",peak_rss_kib:$peak_rss_kib,wall_ms:$wall_ms,
+              repository_writes:$writes,local_tests_run:0,cross_project_required_gates:0,
+              deterministic_replay:true}
+          ' > "$RUNNER_TEMP/matcher-runtime.json"
+
+          jq -e '.decision=="DESIGN_CODE_RELATIONS_OBSERVED" and .summary.match==3 and .summary.mismatch==1 and .summary.unknown==0 and .summary.reviewed_mismatches==1 and .summary.unresolved_mismatches==0' "$RUNNER_TEMP/matcher-normal.json" >/dev/null
+          jq -e '.decision=="DESIGN_CODE_MATCH_UNKNOWN" and .claim.reason=="CODE_CONNECT_PROPERTY_UNAVAILABLE" and .summary.unknown==1' "$RUNNER_TEMP/matcher-unknown.json" >/dev/null
+          jq -e '.decision=="DESIGN_CODE_MATCH_UNKNOWN" and .claim.reason=="NAME_ONLY_MATCH_FORBIDDEN" and .summary.unknown==1' "$RUNNER_TEMP/matcher-name-only.json" >/dev/null
+          jq -e '.decision=="FAIL_CLOSED" and .claim.reason=="DTCG_ALIAS_TARGET_MISSING" and .summary.unresolved_mismatches==1' "$RUNNER_TEMP/matcher-refuted.json" >/dev/null
+
+          jq '(.nodes)|=map(select(.name!="RefuseNameOnlyMatch"))' "$graph" > "$RUNNER_TEMP/missing-matcher-activity.json"
+          if bash "$matcher" "$RUNNER_TEMP/missing-matcher-activity.json" "$denominator" fixtures/button-system "$RUNNER_TEMP/missing-meta-output.json" "$SUBJECT_SHA" missing-meta; then
+            echo "matcher accepted a missing Gooo activity" >&2
+            exit 1
+          fi
+
+      - name: Close the fixed matcher denominator
+        shell: bash
+        run: |
+          set -euo pipefail
+          evaluator=scripts/evaluate-design-code-match.sh
+          args=(
+            contracts/design-code-match-denominator-v1.json
+            "$RUNNER_TEMP/matcher-normal.json"
+            "$RUNNER_TEMP/matcher-unknown.json"
+            "$RUNNER_TEMP/matcher-name-only.json"
+            "$RUNNER_TEMP/matcher-refuted.json"
+            "$RUNNER_TEMP/matcher-runtime.json"
+          )
+          bash "$evaluator" "${args[@]}" "$RUNNER_TEMP/matcher-conformance.json" "$SUBJECT_SHA"
+          bash "$evaluator" "${args[@]}" "$RUNNER_TEMP/matcher-conformance-replay.json" "$SUBJECT_SHA"
+          cmp -s "$RUNNER_TEMP/matcher-conformance.json" "$RUNNER_TEMP/matcher-conformance-replay.json"
+          jq -e '
+            .decision=="DESIGN_CODE_MATCHER_CONFORMANT" and
+            .summary.total_cells==12 and .summary.closed_cells==12 and
+            .summary.unknown_cells==0 and .summary.refuted_cells==0 and
+            .summary.input_classes==7 and .summary.relation_outputs==4 and
+            .summary.match==3 and .summary.unknown_relations==0 and
+            .summary.mismatch==1 and .summary.reviewed_mismatches==1 and
+            .summary.adversarial_scenarios==3 and .summary.repository_writes==0 and
+            .summary.local_tests_run==0 and .summary.cross_project_required_gates==0 and
+            ([.proofs[]|select(.closed==4 and .total==4)]|length)==3 and
+            ([.indicator_classes[]|select(.closed==4 and .total==4)]|length)==3 and
+            .claim.next_operation=="PUBLISH_IMMUTABLE_DESIGN_PRODUCT_RELEASE"
+          ' "$RUNNER_TEMP/matcher-conformance.json" >/dev/null
+
+      - name: Publish human-readable relation evidence
+        shell: bash
+        run: |
+          {
+            echo '## Gooo design-code relation matcher'
+            echo
+            jq -r '
+              "- matcher cells: \(.summary.closed_cells)/\(.summary.total_cells) CLOSED",
+              "- input classes: \(.summary.input_classes)",
+              "- relation outputs: \(.summary.relation_outputs)",
+              "- normal MATCH / UNKNOWN / MISMATCH: \(.summary.match) / \(.summary.unknown_relations) / \(.summary.mismatch)",
+              "- reviewed mismatches: \(.summary.reviewed_mismatches)",
+              "- adversarial scenarios: \(.summary.adversarial_scenarios)/3",
+              "- repository writes: \(.summary.repository_writes)",
+              "- local tests: \(.summary.local_tests_run)",
+              "- cross-project required gates: \(.summary.cross_project_required_gates)"
+            ' "$RUNNER_TEMP/matcher-conformance.json"
+            echo
+            echo '### Canonical relations'
+            jq -r '.relations[]|"- `\(.id)`: \(.state) / \(.disposition) / evidence \(.evidence_count)"' "$RUNNER_TEMP/matcher-normal.json"
+            jq -r '"- peak RSS: \(.peak_rss_kib) KiB", "- wall time: \(.wall_ms) ms"' "$RUNNER_TEMP/matcher-runtime.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce zero input-repository writes
+        run: test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: design-code-match-${{ env.SUBJECT_SHA }}
+          path: |
+            ${{ runner.temp }}/matcher-syntax.json
+            ${{ runner.temp }}/matcher-semantic.json
+            ${{ runner.temp }}/matcher-graph.json
+            ${{ runner.temp }}/matcher-normal.json
+            ${{ runner.temp }}/matcher-replay.json
+            ${{ runner.temp }}/matcher-unknown.json
+            ${{ runner.temp }}/matcher-name-only.json
+            ${{ runner.temp }}/matcher-refuted.json
+            ${{ runner.temp }}/matcher-runtime.json
+            ${{ runner.temp }}/matcher-conformance.json
+            ${{ runner.temp }}/matcher-conformance-replay.json
+          if-no-files-found: warn

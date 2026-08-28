@@ -1,0 +1,31 @@
+{
+  "schema": "gooo/design-code-match-denominator/v1",
+  "denominator_id": "gooo.denominator.design-code-match.v1",
+  "candidate_id": "gooo.product.design-code-relation-matcher.v1",
+  "evaluation_date": "2026-08-28",
+  "total": 12,
+  "proofs": [
+    {"choice":"FOUNDATION","total":4},
+    {"choice":"COHERENCE","total":4},
+    {"choice":"REGRESSION","total":4}
+  ],
+  "indicator_classes": [
+    {"class":"DRIVER","total":4},
+    {"class":"OUTCOME","total":4},
+    {"class":"GUARDRAIL","total":4}
+  ],
+  "cells": [
+    {"id":"MATCHER_AUTHORITY_BOUND","activity":"BindMatcherAuthority","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"MATCHER_GOOO_AUTHORITY_BOUND"},
+    {"id":"DTCG_INPUT_OBSERVED","activity":"ObserveDTCGTokens","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"DTCG_TOKEN_INPUT_OBSERVED"},
+    {"id":"CODE_CONNECT_INPUT_OBSERVED","activity":"ObserveCodeConnect","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"CODE_CONNECT_INPUT_OBSERVED"},
+    {"id":"CODE_SOURCE_OBSERVED","activity":"ObserveCodeSource","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"CODE_SOURCE_INPUT_OBSERVED"},
+    {"id":"GENERATED_OUTPUTS_OBSERVED","activity":"ObserveGeneratedOutputs","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"GENERATED_OUTPUTS_OBSERVED"},
+    {"id":"EXPLICIT_LINEAGE_OBSERVED","activity":"ObserveExplicitLineage","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"EXPLICIT_LINEAGE_GRAPH_OBSERVED"},
+    {"id":"MATCH_RELATIONS_OBSERVED","activity":"EvaluateMatchRelations","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"THREE_EXPLICIT_MATCH_RELATIONS_OBSERVED"},
+    {"id":"REVIEWED_MISMATCH_OBSERVED","activity":"ReviewDesignDifference","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"REVIEWED_MISMATCH_OBSERVED"},
+    {"id":"UNKNOWN_TRACE_OBSERVED","activity":"PreserveMissingEvidenceUnknown","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"MISSING_EVIDENCE_UNKNOWN_PRESERVED"},
+    {"id":"NAME_ONLY_MATCH_REFUSED","activity":"RefuseNameOnlyMatch","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"NAME_ONLY_MATCH_REFUSED"},
+    {"id":"UNRESOLVED_MISMATCH_REFUTED","activity":"RefuteEvidenceContradiction","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"UNRESOLVED_MISMATCH_REFUTED"},
+    {"id":"MATCHER_RUNTIME_OBSERVED","activity":"ObserveMatcherRuntime","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"DETERMINISTIC_ZERO_WRITE_RUNTIME_OBSERVED"}
+  ]
+}
