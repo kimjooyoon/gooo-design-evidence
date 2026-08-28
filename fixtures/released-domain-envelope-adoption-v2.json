@@ -1,0 +1,65 @@
+{
+  "schema": "gooo/design-evidence/released-domain-envelope-adoption/v2",
+  "project": {
+    "id": "design-evidence",
+    "domain": "design-evidence",
+    "owner": "DESIGN_EVIDENCE",
+    "repository": "kimjooyoon/gooo-design-evidence"
+  },
+  "source": {
+    "schema": "gooo/design-evidence/review-packet/v1",
+    "relation_array": "relation_dispositions",
+    "expected_relations": 4,
+    "expected_claim_tuples": 4,
+    "replay_schema": "gooo/design-evidence/review-decision-replay/v1",
+    "replay_satisfied_path": ["receipts_equal"],
+    "replay_total_path": ["receipts_total"],
+    "expected_replay_comparisons": 5
+  },
+  "artifact_contract": {
+    "inputs": {"release_assets": 3, "repository_inputs": 3, "total": 6},
+    "outputs": {"envelope_files": 8, "total": 8},
+    "normal_cases": 1,
+    "unknown_cases": 2,
+    "unknown_coordinate_fields": 6,
+    "unknown_classes": {"direct_missing": 1, "dependency_blocked": 1},
+    "refuted_cases": 5
+  },
+  "authority": {
+    "generator": "PRODUCT_OWNED_GOOO_ACTIVITY_PROJECTION",
+    "source_truth": "RELEASED_DESIGN_EVIDENCE_ONLY",
+    "automatic_merge_authorized": false,
+    "repository_writes_authorized": false,
+    "product_generation_authorized": false,
+    "cross_project_required_gates": 0
+  },
+  "adoption": {
+    "released": {
+      "observed": 0,
+      "total": 1,
+      "state": "UNKNOWN",
+      "stage": "ADOPTION",
+      "step": "OBSERVE_RELEASED_DOMAIN_ADOPTION",
+      "reason": "PRODUCT_OWNED_CANDIDATE_NOT_YET_RELEASED",
+      "unknown_class": "DIRECT_MISSING",
+      "next_operation": "RELEASE_PRODUCT_OWNED_ENVELOPE",
+      "blocked_by": []
+    },
+    "external_utility": {
+      "observed": 0,
+      "total": 1,
+      "state": "UNKNOWN",
+      "stage": "UTILITY",
+      "step": "OBSERVE_EXTERNAL_USER_VALIDATION",
+      "reason": "NO_USER_VALIDATION",
+      "unknown_class": "DIRECT_MISSING",
+      "next_operation": "COLLECT_INDEPENDENT_USER_EVIDENCE",
+      "blocked_by": []
+    }
+  },
+  "improvement": {
+    "exact_before_after_pairs": {"observed": 0, "total": 1},
+    "state": "UNKNOWN",
+    "reason": "NO_EXACT_BEFORE_AFTER_PAIR"
+  }
+}
