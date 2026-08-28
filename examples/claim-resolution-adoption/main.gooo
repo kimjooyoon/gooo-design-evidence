@@ -1,0 +1,24 @@
+package designclaimadoption
+namespace designclaimadoption
+
+entity CoreClaimResolutionRelease id "design://claim-adoption/core-release"
+entity ReleasedMatcherClaims id "design://claim-adoption/matcher-claims"
+entity ClaimInput id "design://claim-adoption/input"
+entity ClaimResolutionPrimitive id "gooo://claim-resolution/gooo.primitive.claim-resolution-tuple.v1"
+entity ClaimComparison id "design://claim-adoption/comparison"
+entity UnknownClassBoundary id "design://claim-adoption/unknown-class"
+entity ClaimReplay id "design://claim-adoption/replay"
+entity AdoptionDecision id "design://claim-adoption/decision"
+
+activity ObserveClaimResolutionRelease(CoreClaimResolutionRelease) -> AdoptionDecision
+activity ObserveReleasedMatcherClaims(ReleasedMatcherClaims) -> AdoptionDecision
+activity ResolveDesignClosedClaim(ClaimInput) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=DESIGN_CODE_RELATIONS_OBSERVED;unknown_class=NONE;next_operation=NONE"
+activity ResolveMissingEvidenceUnknown(ClaimInput) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=UNKNOWN;stage=RELATION;step=RESOLVE_DESIGN_CODE_RELATION;reason=CODE_CONNECT_PROPERTY_UNAVAILABLE;unknown_class=DIRECT_MISSING;next_operation=PROVIDE_CODE_CONNECT_PROPERTY"
+activity ResolveNameOnlyUnknown(ClaimInput) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=UNKNOWN;stage=RELATION;step=RESOLVE_DESIGN_CODE_RELATION;reason=NAME_ONLY_MATCH_FORBIDDEN;unknown_class=DIRECT_MISSING;next_operation=PROVIDE_EXPLICIT_LINEAGE_EDGE"
+activity ResolveDesignContradiction(ClaimInput) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=REFUTED;stage=RELATION;step=RESOLVE_DESIGN_CODE_RELATION;reason=DTCG_ALIAS_TARGET_MISSING;unknown_class=NONE;next_operation=REPAIR_DESIGN_EVIDENCE"
+activity CompareMatcherClaims(ReleasedMatcherClaims) -> ClaimComparison
+activity PreserveUnknownClass(ClaimComparison) -> UnknownClassBoundary
+activity RejectIncompleteUnknown(ClaimInput) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=UNKNOWN;stage=RELATION;step=RESOLVE_DESIGN_CODE_RELATION;reason=CODE_CONNECT_PROPERTY_UNAVAILABLE;unknown_class=NONE;next_operation=PROVIDE_CODE_CONNECT_PROPERTY"
+activity RejectUnrecognizedState(ClaimInput) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=FIXED_POINT;stage=NONE;step=NONE;reason=UNRECOGNIZED_STATE;unknown_class=NONE;next_operation=NONE"
+activity ObserveClaimReplay(ClaimResolutionPrimitive) -> ClaimReplay
+activity RecordIndependentAdoption(ClaimComparison) -> AdoptionDecision
