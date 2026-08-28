@@ -1,0 +1,29 @@
+package button_system
+namespace designcodematch
+
+entity MatcherAuthority id "design://matcher/authority"
+entity DTCGTokenInput id "design://matcher/input/dtcg"
+entity CodeConnectInput id "design://matcher/input/code-connect"
+entity CodeSourceInput id "design://matcher/input/code-source"
+entity GeneratedOutputSet id "design://matcher/input/generated-outputs"
+entity ExplicitLineageGraph id "design://matcher/input/lineage"
+entity MatchRelationSet id "design://matcher/relation/match"
+entity ReviewedMismatch id "design://matcher/relation/reviewed-mismatch"
+entity MissingEvidenceUnknown id "design://matcher/relation/unknown"
+entity NameOnlyRefusal id "design://matcher/guard/name-only"
+entity EvidenceContradiction id "design://matcher/relation/refuted"
+entity MatcherRuntime id "design://matcher/runtime"
+entity MatcherDecision id "design://matcher/decision"
+
+activity BindMatcherAuthority(MatcherAuthority) -> MatcherDecision
+activity ObserveDTCGTokens(DTCGTokenInput) -> MatcherDecision
+activity ObserveCodeConnect(CodeConnectInput) -> MatcherDecision
+activity ObserveCodeSource(CodeSourceInput) -> MatcherDecision
+activity ObserveGeneratedOutputs(GeneratedOutputSet) -> MatcherDecision
+activity ObserveExplicitLineage(ExplicitLineageGraph) -> MatcherDecision
+activity EvaluateMatchRelations(MatchRelationSet) -> MatcherDecision
+activity ReviewDesignDifference(ReviewedMismatch) -> MatcherDecision
+activity PreserveMissingEvidenceUnknown(MissingEvidenceUnknown) -> MatcherDecision
+activity RefuseNameOnlyMatch(NameOnlyRefusal) -> MatcherDecision
+activity RefuteEvidenceContradiction(EvidenceContradiction) -> MatcherDecision
+activity ObserveMatcherRuntime(MatcherRuntime) -> MatcherDecision
