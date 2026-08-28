@@ -1,0 +1,218 @@
+name: Evidence generator consumer
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  generated-design-evidence:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Bind subject and adoption state
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SUBJECT_SHA=${{ github.event.pull_request.head.sha || github.sha }}" >> "$GITHUB_ENV"
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "ADOPTION_STATE=MAIN_MERGED" >> "$GITHUB_ENV"
+            echo "MERGED_PUBLIC_CONSUMERS=2" >> "$GITHUB_ENV"
+          else
+            echo "ADOPTION_STATE=PR_CANDIDATE" >> "$GITHUB_ENV"
+            echo "MERGED_PUBLIC_CONSUMERS=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download pinned Gooo and generator releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_lock=contracts/core-release-lock-v1.json
+          core_tag=$(jq -r '.tag // .release.tag' "$core_lock")
+          core_tag_object=$(jq -r '.tag_object_sha // .release.tag_object.sha' "$core_lock")
+          core_target=$(jq -r '.target_commit_sha // .release.target.sha' "$core_lock")
+          core_asset=$(jq -r '.runtime.archive // "gooo-linux-amd64.tar.gz"' "$core_lock")
+          core_digest=$(jq -r --arg name "$core_asset" '(.assets // .release.assets)[]|select(.name==$name)|(.sha256 // (.digest|sub("^sha256:";"")))' "$core_lock")
+          gh api "repos/kimjooyoon/meta-ontology-go/git/ref/tags/$core_tag" > "$RUNNER_TEMP/core-ref.json"
+          jq -e --arg sha "$core_tag_object" '.object.type=="tag" and .object.sha==$sha' "$RUNNER_TEMP/core-ref.json" >/dev/null
+          gh api "repos/kimjooyoon/meta-ontology-go/git/tags/$core_tag_object" > "$RUNNER_TEMP/core-tag.json"
+          jq -e --arg sha "$core_target" '.object.type=="commit" and .object.sha==$sha' "$RUNNER_TEMP/core-tag.json" >/dev/null
+          gh api "repos/kimjooyoon/meta-ontology-go/releases/tags/$core_tag" > "$RUNNER_TEMP/core-release.json"
+          core_asset_id=$(jq -r --arg name "$core_asset" '.assets[]|select(.name==$name)|.id' "$RUNNER_TEMP/core-release.json")
+          gh api -H 'Accept: application/octet-stream' "repos/kimjooyoon/meta-ontology-go/releases/assets/$core_asset_id" > "$RUNNER_TEMP/$core_asset"
+          printf '%s  %s\n' "$core_digest" "$RUNNER_TEMP/$core_asset" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/core"
+          tar -xzf "$RUNNER_TEMP/$core_asset" -C "$RUNNER_TEMP/core"
+          chmod +x "$RUNNER_TEMP/core/gooo"
+          echo "GOOO_BIN=$RUNNER_TEMP/core/gooo" >> "$GITHUB_ENV"
+
+          generator_lock=contracts/evidence-generator-release-lock-v1.json
+          generator_tag=$(jq -r '.tag' "$generator_lock")
+          generator_tag_object=$(jq -r '.tag_object_sha' "$generator_lock")
+          generator_target=$(jq -r '.target_commit_sha' "$generator_lock")
+          generator_asset=$(jq -r '.assets[0].name' "$generator_lock")
+          generator_digest=$(jq -r '.assets[0].sha256' "$generator_lock")
+          gh api "repos/kimjooyoon/gooo-evidence-generator/git/ref/tags/$generator_tag" > "$RUNNER_TEMP/generator-ref.json"
+          jq -e --arg sha "$generator_tag_object" '.object.type=="tag" and .object.sha==$sha' "$RUNNER_TEMP/generator-ref.json" >/dev/null
+          gh api "repos/kimjooyoon/gooo-evidence-generator/git/tags/$generator_tag_object" > "$RUNNER_TEMP/generator-tag.json"
+          jq -e --arg sha "$generator_target" '.object.type=="commit" and .object.sha==$sha' "$RUNNER_TEMP/generator-tag.json" >/dev/null
+          gh api "repos/kimjooyoon/gooo-evidence-generator/releases/tags/$generator_tag" > "$RUNNER_TEMP/generator-release.json"
+          generator_asset_id=$(jq -r --arg name "$generator_asset" '.assets[]|select(.name==$name)|.id' "$RUNNER_TEMP/generator-release.json")
+          gh api -H 'Accept: application/octet-stream' "repos/kimjooyoon/gooo-evidence-generator/releases/assets/$generator_asset_id" > "$RUNNER_TEMP/$generator_asset"
+          printf '%s  %s\n' "$generator_digest" "$RUNNER_TEMP/$generator_asset" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/generator"
+          tar -xzf "$RUNNER_TEMP/$generator_asset" -C "$RUNNER_TEMP/generator"
+          test -f "$RUNNER_TEMP/generator/scripts/generate.sh"
+          test -f "$RUNNER_TEMP/generator/scripts/verify.sh"
+          test -f "$RUNNER_TEMP/generator/contracts/repetition-observation-v1.json"
+          test -f "$RUNNER_TEMP/generator/examples/self-hosted-generator/main.gooo"
+
+      - name: Observe released meta and design graphs
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot() {
+            find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type f -print0 |
+              sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}'
+          }
+          snapshot > "$RUNNER_TEMP/repository-before"
+          meta_source="$RUNNER_TEMP/generator/examples/self-hosted-generator/main.gooo"
+          project_source=examples/button-system/main.gooo
+          "$GOOO_BIN" check --json "$meta_source" > "$RUNNER_TEMP/meta-syntax.json"
+          "$GOOO_BIN" check --semantic --json "$meta_source" > "$RUNNER_TEMP/meta-semantic.json"
+          "$GOOO_BIN" graph dump "$meta_source" > "$RUNNER_TEMP/meta-graph.json"
+          "$GOOO_BIN" check --json "$project_source" > "$RUNNER_TEMP/project-syntax.json"
+          "$GOOO_BIN" check --semantic --json "$project_source" > "$RUNNER_TEMP/project-semantic.json"
+          "$GOOO_BIN" graph dump "$project_source" > "$RUNNER_TEMP/project-graph.json"
+          jq -e '.status=="ok"' "$RUNNER_TEMP/meta-syntax.json" "$RUNNER_TEMP/meta-semantic.json" "$RUNNER_TEMP/project-syntax.json" "$RUNNER_TEMP/project-semantic.json" >/dev/null
+          jq -e '.schema_version=="gooo-graph/v1" and ([.nodes[]|select(.kind=="Activity")]|length)==12' "$RUNNER_TEMP/meta-graph.json" "$RUNNER_TEMP/project-graph.json" >/dev/null
+
+      - name: Generate and challenge design evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          generator="$RUNNER_TEMP/generator/scripts/generate.sh"
+          verifier="$RUNNER_TEMP/generator/scripts/verify.sh"
+          observation="$RUNNER_TEMP/generator/contracts/repetition-observation-v1.json"
+          denominator="$GITHUB_WORKSPACE/contracts/generated-design-denominator-v1.json"
+          profile="$GITHUB_WORKSPACE/fixtures/generated-design-project-v2.json"
+
+          start_ns=$(date +%s%N)
+          /usr/bin/time -f '%M' -o "$RUNNER_TEMP/generator-rss" \
+            bash "$generator" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/meta-graph.json" "$RUNNER_TEMP/project-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/complete-a" "$SUBJECT_SHA" design-evidence-complete
+          end_ns=$(date +%s%N)
+          echo $(( (end_ns-start_ns)/1000000 )) > "$RUNNER_TEMP/generator-wall-ms"
+          bash "$generator" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/meta-graph.json" "$RUNNER_TEMP/project-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/complete-b" "$SUBJECT_SHA" design-evidence-complete
+          diff -qr "$RUNNER_TEMP/complete-a" "$RUNNER_TEMP/complete-b"
+          bash "$verifier" "$RUNNER_TEMP/complete-a" "$RUNNER_TEMP/verification.json"
+
+          jq -e --arg sha "$SUBJECT_SHA" '
+            .schema=="gooo/evidence-generator/report/v2" and .decision=="PROJECT_GENERATED" and
+            .subject.sha==$sha and .subject.meta_graph_hash!=.subject.project_graph_hash and
+            .summary.closed==12 and .summary.unknown==0 and .summary.refuted==0 and
+            .summary.meta_activity_nodes==12 and .summary.project_activity_nodes==12 and
+            .patterns.promoted==11 and .patterns.missing_required==0 and
+            .authority.root_readme_readiness=="EXCLUDED" and
+            ([.proofs[]|select(.closed==4 and .total==4)]|length)==3
+          ' "$RUNNER_TEMP/complete-a/generation-report.json" >/dev/null
+          jq -e '(has("assets")|not) and .release.tag_object.type=="tag" and .release.target.type=="commit" and (.release.assets|length)==8' "$RUNNER_TEMP/complete-a/contracts/core-release-lock-v1.json" >/dev/null
+          jq -e '.decision=="GENERATION_VERIFIED" and .summary.closed==6 and .summary.total==6 and .summary.actual_output_files==7' "$RUNNER_TEMP/verification.json" >/dev/null
+
+          jq '.nodes |= map(select(.name!="ObserveDesignSourceBundle"))' "$RUNNER_TEMP/project-graph.json" > "$RUNNER_TEMP/missing-project-graph.json"
+          bash "$generator" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/meta-graph.json" "$RUNNER_TEMP/missing-project-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/missing-design-source" "$SUBJECT_SHA" missing-design-source-activity
+          jq -e '
+            .decision=="INCOMPLETE" and .summary.closed==3 and .summary.unknown==9 and .summary.refuted==0 and
+            .summary.direct_missing==1 and .summary.dependency_blocked==8 and .patterns.promoted==11 and
+            .claim.stage=="DESIGN_SOURCE" and .claim.step=="OBSERVE_DESIGN_SOURCE_BUNDLE" and
+            .claim.reason=="DESIGN_SOURCE_BUNDLE_UNAVAILABLE" and .claim.unknown_class=="DIRECT_MISSING"
+          ' "$RUNNER_TEMP/missing-design-source/generation-report.json" >/dev/null
+
+          jq '(.nodes[]|select(.kind=="Activity" and .name=="EvaluateEvidenceGraph")) as $node | .nodes += [($node|.id=(.id+"-duplicate"))]' "$RUNNER_TEMP/project-graph.json" > "$RUNNER_TEMP/duplicate-project-graph.json"
+          bash "$generator" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/meta-graph.json" "$RUNNER_TEMP/duplicate-project-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/duplicate-evidence-graph" "$SUBJECT_SHA" duplicate-evidence-graph-activity
+          jq -e '
+            .decision=="FAIL_CLOSED" and .summary.closed==8 and .summary.unknown==0 and .summary.refuted==4 and
+            .patterns.promoted==11 and .claim.stage=="EVIDENCE" and .claim.step=="EVALUATE_EVIDENCE_GRAPH" and
+            .claim.reason=="AMBIGUOUS_ACTIVITY_BINDING"
+          ' "$RUNNER_TEMP/duplicate-evidence-graph/generation-report.json" >/dev/null
+
+          cp -R "$RUNNER_TEMP/complete-a" "$RUNNER_TEMP/generated-drift"
+          printf '\n' >> "$RUNNER_TEMP/generated-drift/contracts/evidence-denominator-v1.json"
+          bash "$verifier" "$RUNNER_TEMP/generated-drift" "$RUNNER_TEMP/drift-verification.json"
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed==5 and .summary.refuted==1 and .claim.reason=="GENERATED_FILE_DIGEST_MISMATCH"' "$RUNNER_TEMP/drift-verification.json" >/dev/null
+
+      - name: Publish adoption receipt and enforce read-only effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot() {
+            find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type f -print0 |
+              sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}'
+          }
+          before=$(cat "$RUNNER_TEMP/repository-before")
+          after=$(snapshot)
+          if [ "$before" = "$after" ]; then writes=0; else writes=1; fi
+          peak_rss_kib=$(cat "$RUNNER_TEMP/generator-rss")
+          wall_ms=$(cat "$RUNNER_TEMP/generator-wall-ms")
+          jq -S -n \
+            --arg subject_sha "$SUBJECT_SHA" --arg adoption_state "$ADOPTION_STATE" \
+            --arg before "$before" --arg after "$after" \
+            --argjson writes "$writes" --argjson merged_public_consumers "$MERGED_PUBLIC_CONSUMERS" \
+            --argjson peak_rss_kib "$peak_rss_kib" --argjson wall_ms "$wall_ms" \
+            '{schema:"gooo/evidence-generator/consumer-runtime/v1",subject_sha:$subject_sha,
+              adoption_state:$adoption_state,merged_public_consumers:$merged_public_consumers,
+              generator:{tag:"v0.2.3-dev",target_sha:"f1d20ba2900b12e67122003c03fa4119821ec852",peak_rss_kib:$peak_rss_kib,wall_ms:$wall_ms},
+              repository:{before_digest:$before,after_digest:$after,writes:$writes},
+              deterministic_replay:true,local_tests_run:0}' > "$RUNNER_TEMP/runtime.json"
+          jq -e '.repository.writes==0 and .deterministic_replay==true and .local_tests_run==0' "$RUNNER_TEMP/runtime.json" >/dev/null
+
+          jq -S -n \
+            --slurpfile complete "$RUNNER_TEMP/complete-a/generation-report.json" \
+            --slurpfile missing "$RUNNER_TEMP/missing-design-source/generation-report.json" \
+            --slurpfile duplicate "$RUNNER_TEMP/duplicate-evidence-graph/generation-report.json" \
+            --slurpfile drift "$RUNNER_TEMP/drift-verification.json" \
+            --slurpfile runtime "$RUNNER_TEMP/runtime.json" '
+            {
+              schema:"gooo/evidence-generator/consumer-adoption/v1",
+              decision:"CONSUMER_CONFORMANCE_CLOSED",
+              consumer:"kimjooyoon/gooo-design-evidence",
+              subject_sha:$runtime[0].subject_sha,
+              adoption_state:$runtime[0].adoption_state,
+              merged_public_consumers:$runtime[0].merged_public_consumers,
+              complete:{closed:$complete[0].summary.closed,total:$complete[0].summary.total,promoted_patterns:$complete[0].patterns.promoted,generated_files:$complete[0].summary.expected_output_files},
+              missing:{closed:$missing[0].summary.closed,unknown:$missing[0].summary.unknown,direct_missing:$missing[0].summary.direct_missing,dependency_blocked:$missing[0].summary.dependency_blocked},
+              duplicate:{closed:$duplicate[0].summary.closed,refuted:$duplicate[0].summary.refuted},
+              drift:{closed:$drift[0].summary.closed,total:$drift[0].summary.total,refuted:$drift[0].summary.refuted},
+              repository_writes:$runtime[0].repository.writes,
+              local_tests_run:$runtime[0].local_tests_run
+            }
+          ' > "$RUNNER_TEMP/adoption.json"
+          jq -e '.decision=="CONSUMER_CONFORMANCE_CLOSED" and .complete=={closed:12,total:12,promoted_patterns:11,generated_files:7} and .missing=={closed:3,unknown:9,direct_missing:1,dependency_blocked:8} and .duplicate=={closed:8,refuted:4} and .drift=={closed:5,total:6,refuted:1} and .repository_writes==0 and .local_tests_run==0' "$RUNNER_TEMP/adoption.json" >/dev/null
+
+          {
+            echo '## Released evidence-generator consumer 2'
+            jq -r '"- adoption: \(.adoption_state)","- merged public consumers: \(.merged_public_consumers)/2","- complete: \(.complete.closed)/\(.complete.total) CLOSED; patterns \(.complete.promoted_patterns)","- missing design source: direct \(.missing.direct_missing); dependency blocked \(.missing.dependency_blocked)","- duplicate evidence graph: REFUTED \(.duplicate.refuted)","- generated drift: \(.drift.closed)/\(.drift.total) verified; REFUTED \(.drift.refuted)","- repository writes: \(.repository_writes)","- local test executions: \(.local_tests_run)"' "$RUNNER_TEMP/adoption.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload consumer evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: design-evidence-generator-consumer-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/complete-a
+            ${{ runner.temp }}/complete-b
+            ${{ runner.temp }}/missing-design-source
+            ${{ runner.temp }}/duplicate-evidence-graph
+            ${{ runner.temp }}/verification.json
+            ${{ runner.temp }}/drift-verification.json
+            ${{ runner.temp }}/runtime.json
+            ${{ runner.temp }}/adoption.json
+            ${{ runner.temp }}/meta-graph.json
+            ${{ runner.temp }}/project-graph.json
