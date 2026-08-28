@@ -1,0 +1,31 @@
+{
+  "schema": "gooo/parsed-code-connect-observation/v1",
+  "producer": {
+    "tool": "synthetic-code-connect-fixture",
+    "version": "1"
+  },
+  "component": {
+    "name": "Button",
+    "node_url": "https://www.figma.com/design/public-fixture?node-id=1-2",
+    "source": {
+      "path": "fixtures/button-system/button.tsx",
+      "symbol": "Button"
+    },
+    "properties": [
+      {
+        "figma_property": "Variant",
+        "figma_value": "Primary",
+        "code_property": "variant",
+        "code_value": "primary",
+        "code_type": "enum"
+      },
+      {
+        "figma_property": "Disabled",
+        "figma_value": true,
+        "code_property": "disabled",
+        "code_value": true,
+        "code_type": "boolean"
+      }
+    ]
+  }
+}

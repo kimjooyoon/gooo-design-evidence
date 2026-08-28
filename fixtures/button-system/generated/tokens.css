@@ -1,0 +1,5 @@
+:root {
+  --color-blue: #1463ff;
+  --color-action: var(--color-blue);
+  --radius-button: 8px;
+}

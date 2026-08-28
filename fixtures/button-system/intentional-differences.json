@@ -1,0 +1,25 @@
+{
+  "schema": "gooo/intentional-design-differences/v1",
+  "differences": [
+    {
+      "id": "difference-ios-button-radius",
+      "source": {
+        "kind": "DTCG_TOKEN",
+        "locator": "/radius/button",
+        "value": 8,
+        "unit": "px"
+      },
+      "observed": {
+        "kind": "IOS_SYMBOL",
+        "locator": "radiusButton",
+        "value": 6,
+        "unit": "pt"
+      },
+      "reason": "The compact iOS control uses the platform-native radius scale.",
+      "scope": "ios/Button",
+      "owner": "design-system",
+      "reviewer": "ios-platform",
+      "expires_on": "2027-12-31"
+    }
+  ]
+}
