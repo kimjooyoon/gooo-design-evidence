@@ -1,0 +1,32 @@
+package designreviewpacket
+namespace designreviewpacket
+
+entity ReviewAuthority id "design://review-packet/authority"
+entity CoreClaimResolutionRelease id "design://review-packet/core-release"
+entity ReleasedMatcherEvidence id "design://review-packet/matcher-release"
+entity ReleasedClaimReceipts id "design://review-packet/claim-release"
+entity ReviewRequest id "design://review-packet/request"
+entity RelationDispositionPlan id "design://review-packet/relation-plan"
+entity ClaimTupleLedger id "design://review-packet/claim-ledger"
+entity MachineReviewPacket id "design://review-packet/output/json"
+entity HumanReviewPacket id "design://review-packet/output/markdown"
+entity ClaimResolutionPrimitive id "gooo://claim-resolution/gooo.primitive.claim-resolution-tuple.v1"
+entity ReviewFailure id "design://review-packet/failure"
+entity ReviewRuntime id "design://review-packet/runtime"
+entity ReviewDecision id "design://review-packet/decision"
+
+activity BindReviewAuthority(ReviewAuthority) -> ReviewDecision
+activity ObserveCoreClaimResolutionRelease(CoreClaimResolutionRelease) -> ReviewDecision
+activity ObserveReleasedMatcherEvidence(ReleasedMatcherEvidence) -> ReviewDecision
+activity ObserveReleasedClaimReceipts(ReleasedClaimReceipts) -> ReviewDecision
+activity ObserveReviewRequest(ReviewRequest) -> ReviewDecision
+activity ProjectRelationDispositions(ReleasedMatcherEvidence) -> RelationDispositionPlan
+activity ProjectClaimTupleLedger(ReleasedClaimReceipts) -> ClaimTupleLedger
+activity GenerateMachineReviewPacket(RelationDispositionPlan) -> MachineReviewPacket
+activity GenerateHumanReviewPacket(ClaimTupleLedger) -> HumanReviewPacket
+activity ResolveReviewReadyClaim(MachineReviewPacket) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=DESIGN_RELEASE_REVIEW_PACKET_GENERATED;unknown_class=NONE;next_operation=PUBLISH_IMMUTABLE_DESIGN_REVIEW_PACKET_RELEASE"
+activity PreserveMissingMatcherUnknown(ReviewFailure) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=UNKNOWN;stage=RELEASE_EVIDENCE;step=OBSERVE_RELEASED_MATCHER_EVIDENCE;reason=MATCHER_RELEASE_REPORT_UNAVAILABLE;unknown_class=DIRECT_MISSING;next_operation=RESTORE_MATCHER_RELEASE_REPORT"
+activity RefuteClaimTupleMismatch(ReviewFailure) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=REFUTED;stage=CLAIM_COMPARISON;step=PROJECT_CLAIM_TUPLE_LEDGER;reason=RELEASED_CLAIM_TUPLE_MISMATCH;unknown_class=NONE;next_operation=RESTORE_RELEASED_CLAIM_TUPLES"
+activity RefuteUnreviewedMismatch(ReviewFailure) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=REFUTED;stage=RELATION_POLICY;step=PROJECT_RELATION_DISPOSITIONS;reason=UNREVIEWED_DESIGN_MISMATCH;unknown_class=NONE;next_operation=REVIEW_OR_REPAIR_DESIGN_MISMATCH"
+activity RefuteAuthorityEscalation(ReviewFailure) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=REFUTED;stage=AUTHORITY;step=BIND_REVIEW_AUTHORITY;reason=AUTOMATIC_MERGE_AUTHORITY_ESCALATED;unknown_class=NONE;next_operation=REMOVE_AUTOMATIC_MERGE_AUTHORITY"
+activity ObserveReviewRuntime(ReviewRuntime) -> ReviewDecision

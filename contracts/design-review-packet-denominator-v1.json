@@ -1,0 +1,33 @@
+{
+  "schema": "gooo/design-evidence/review-packet-denominator/v1",
+  "denominator_id": "gooo.denominator.design-release-review-packet.v1",
+  "candidate_id": "gooo.product.design-release-review-packet.v1",
+  "total": 15,
+  "proofs": [
+    {"choice":"FOUNDATION","total":5},
+    {"choice":"COHERENCE","total":5},
+    {"choice":"REGRESSION","total":5}
+  ],
+  "indicator_classes": [
+    {"class":"DRIVER","total":5},
+    {"class":"OUTCOME","total":5},
+    {"class":"GUARDRAIL","total":5}
+  ],
+  "cells": [
+    {"id":"REVIEW_AUTHORITY_BOUND","activity":"BindReviewAuthority","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"READ_ONLY_REVIEW_AUTHORITY_BOUND"},
+    {"id":"CORE_RELEASE_OBSERVED","activity":"ObserveCoreClaimResolutionRelease","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"CORE_CLAIM_RESOLUTION_RELEASE_OBSERVED"},
+    {"id":"RELEASED_MATCHER_EVIDENCE","activity":"ObserveReleasedMatcherEvidence","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"RELEASED_MATCHER_EVIDENCE_OBSERVED"},
+    {"id":"RELEASED_CLAIM_RECEIPTS","activity":"ObserveReleasedClaimReceipts","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"RELEASED_CLAIM_RECEIPTS_OBSERVED"},
+    {"id":"REVIEW_REQUEST_OBSERVED","activity":"ObserveReviewRequest","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"EXPLICIT_REVIEW_REQUEST_OBSERVED"},
+    {"id":"RELATION_DISPOSITIONS","activity":"ProjectRelationDispositions","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"FOUR_RELATION_DISPOSITIONS_PROJECTED"},
+    {"id":"CLAIM_TUPLE_LEDGER","activity":"ProjectClaimTupleLedger","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"FOUR_RELEASED_CLAIM_TUPLES_PROJECTED"},
+    {"id":"MACHINE_REVIEW_PACKET","activity":"GenerateMachineReviewPacket","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"MACHINE_REVIEW_PACKET_GENERATED"},
+    {"id":"HUMAN_REVIEW_PACKET","activity":"GenerateHumanReviewPacket","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"HUMAN_REVIEW_PACKET_GENERATED"},
+    {"id":"REVIEW_READY_DECISION","activity":"ResolveReviewReadyClaim","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"REVIEW_READY_CLAIM_RESOLVED_BY_GOOO"},
+    {"id":"MISSING_MATCHER_UNKNOWN","activity":"PreserveMissingMatcherUnknown","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"MISSING_MATCHER_EVIDENCE_UNKNOWN_PRESERVED"},
+    {"id":"CLAIM_TUPLE_MISMATCH_REFUTED","activity":"RefuteClaimTupleMismatch","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"CLAIM_TUPLE_MISMATCH_REFUTED"},
+    {"id":"UNREVIEWED_MISMATCH_REFUTED","activity":"RefuteUnreviewedMismatch","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"UNREVIEWED_DESIGN_MISMATCH_REFUTED"},
+    {"id":"AUTHORITY_ESCALATION_REFUTED","activity":"RefuteAuthorityEscalation","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"AUTOMATIC_MERGE_AUTHORITY_ESCALATION_REFUTED"},
+    {"id":"REVIEW_RUNTIME_OBSERVED","activity":"ObserveReviewRuntime","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"DETERMINISTIC_ZERO_WRITE_REVIEW_RUNTIME_OBSERVED"}
+  ]
+}

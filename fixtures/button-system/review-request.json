@@ -1,0 +1,33 @@
+{
+  "schema": "gooo/design-release-review-request/v1",
+  "request_id": "button-system-v1-release-review",
+  "component": "Button",
+  "owner": "design-system",
+  "reviewer": "frontend-platform",
+  "required_relation_ids": [
+    "action-token-used-by-button",
+    "figma-disabled-implemented-by-code",
+    "figma-variant-implemented-by-code",
+    "ios-radius-intentional-difference"
+  ],
+  "required_claim_activities": [
+    "ResolveDesignClosedClaim",
+    "ResolveDesignContradiction",
+    "ResolveMissingEvidenceUnknown",
+    "ResolveNameOnlyUnknown"
+  ],
+  "required_outputs": [
+    "design-review-packet.json",
+    "design-review-packet.md"
+  ],
+  "policy": {
+    "required_matches": 3,
+    "allowed_reviewed_mismatches": 1,
+    "allowed_unresolved_mismatches": 0
+  },
+  "authority": {
+    "automatic_merge_authorized": false,
+    "repository_writes_authorized": false,
+    "live_figma_required": false
+  }
+}
