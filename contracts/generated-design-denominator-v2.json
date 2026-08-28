@@ -1,0 +1,29 @@
+{
+  "schema": "gooo/evidence-generator/denominator/v1",
+  "id": "gooo://denominator/design-evidence-generated-project/v2",
+  "target_cells": 12,
+  "proof_totals": [
+    {"proof_choice": "FOUNDATION", "total": 4},
+    {"proof_choice": "COHERENCE", "total": 5},
+    {"proof_choice": "REGRESSION", "total": 3}
+  ],
+  "indicator_totals": [
+    {"indicator_class": "OUTCOME", "total": 3},
+    {"indicator_class": "DRIVER", "total": 5},
+    {"indicator_class": "GUARDRAIL", "total": 4}
+  ],
+  "cells": [
+    {"ordinal":1,"id":"PUBLIC_SUBJECT","activity":"ObservePublicSubject","stage":"SUBJECT","step":"OBSERVE_PUBLIC_SUBJECT","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"PUBLIC_SUBJECT_OBSERVED","unknown_reason":"PUBLIC_SUBJECT_UNAVAILABLE","next_operation":"PROVIDE_PUBLIC_SUBJECT","depends_on":[]},
+    {"ordinal":2,"id":"GOOO_RELEASE_IDENTITY","activity":"LockGoooReleaseIdentity","stage":"CORE_RELEASE","step":"LOCK_GOOO_RELEASE_IDENTITY","proof_choice":"FOUNDATION","indicator_class":"DRIVER","core_identity_anchor":true,"closed_reason":"GOOO_RELEASE_IDENTITY_LOCKED","unknown_reason":"GOOO_RELEASE_IDENTITY_UNAVAILABLE","next_operation":"FETCH_PINNED_GOOO_RELEASE","depends_on":["PUBLIC_SUBJECT"]},
+    {"ordinal":3,"id":"DESIGN_SOURCE_BUNDLE","activity":"ObserveDesignSourceBundle","stage":"DESIGN_SOURCE","step":"OBSERVE_DESIGN_SOURCE_BUNDLE","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"DESIGN_SOURCE_BUNDLE_OBSERVED","unknown_reason":"DESIGN_SOURCE_BUNDLE_UNAVAILABLE","next_operation":"PROVIDE_DESIGN_SOURCE_BUNDLE","depends_on":["PUBLIC_SUBJECT"]},
+    {"ordinal":4,"id":"RELEASED_SEMANTIC_RECEIPTS","activity":"ObserveReleasedSemanticReceipts","stage":"COMPILER","step":"OBSERVE_RELEASED_SEMANTIC_RECEIPTS","proof_choice":"FOUNDATION","indicator_class":"DRIVER","closed_reason":"RELEASED_SEMANTIC_RECEIPTS_OBSERVED","unknown_reason":"RELEASED_SEMANTIC_RECEIPTS_UNAVAILABLE","next_operation":"RUN_RELEASED_GOOO_RECEIPTS","depends_on":["GOOO_RELEASE_IDENTITY"]},
+    {"ordinal":5,"id":"TOKEN_CLAIMS","activity":"BindTokenClaims","stage":"TOKENS","step":"BIND_TOKEN_CLAIMS","proof_choice":"COHERENCE","indicator_class":"DRIVER","closed_reason":"TOKEN_CLAIMS_BOUND","unknown_reason":"TOKEN_CLAIMS_UNAVAILABLE","next_operation":"PROVIDE_TOKEN_CLAIMS","depends_on":["DESIGN_SOURCE_BUNDLE","RELEASED_SEMANTIC_RECEIPTS"]},
+    {"ordinal":6,"id":"FIGMA_CODE_PROPERTIES","activity":"BindFigmaCodeProperties","stage":"CODE_CONNECT","step":"BIND_FIGMA_CODE_PROPERTIES","proof_choice":"COHERENCE","indicator_class":"GUARDRAIL","closed_reason":"FIGMA_CODE_PROPERTIES_BOUND","unknown_reason":"FIGMA_CODE_PROPERTIES_UNAVAILABLE","next_operation":"PROVIDE_CODE_CONNECT_PROPERTIES","depends_on":["DESIGN_SOURCE_BUNDLE","RELEASED_SEMANTIC_RECEIPTS"]},
+    {"ordinal":7,"id":"CODE_TOKEN_LINEAGE","activity":"BindCodeTokenLineage","stage":"LINEAGE","step":"BIND_CODE_TOKEN_LINEAGE","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"CODE_TOKEN_LINEAGE_BOUND","unknown_reason":"CODE_TOKEN_LINEAGE_UNAVAILABLE","next_operation":"PROVIDE_CODE_TOKEN_LINEAGE","depends_on":["TOKEN_CLAIMS","FIGMA_CODE_PROPERTIES"]},
+    {"ordinal":8,"id":"INTENTIONAL_DIFFERENCE","activity":"ReviewIntentionalDifference","stage":"REVIEW","step":"REVIEW_INTENTIONAL_DIFFERENCE","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"INTENTIONAL_DIFFERENCE_REVIEWED","unknown_reason":"INTENTIONAL_DIFFERENCE_UNAVAILABLE","next_operation":"REVIEW_INTENTIONAL_DIFFERENCE","depends_on":["TOKEN_CLAIMS","FIGMA_CODE_PROPERTIES"]},
+    {"ordinal":9,"id":"EVIDENCE_GRAPH","activity":"EvaluateEvidenceGraph","stage":"EVIDENCE","step":"EVALUATE_EVIDENCE_GRAPH","proof_choice":"COHERENCE","indicator_class":"OUTCOME","closed_reason":"EVIDENCE_GRAPH_EVALUATED","unknown_reason":"EVIDENCE_GRAPH_UNAVAILABLE","next_operation":"EVALUATE_EVIDENCE_GRAPH","depends_on":["CODE_TOKEN_LINEAGE","INTENTIONAL_DIFFERENCE"]},
+    {"ordinal":10,"id":"ZERO_REPOSITORY_WRITE","activity":"ObserveZeroRepositoryWrite","stage":"EFFECT","step":"OBSERVE_ZERO_REPOSITORY_WRITE","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"ZERO_REPOSITORY_WRITE_OBSERVED","unknown_reason":"REPOSITORY_EFFECT_UNAVAILABLE","next_operation":"OBSERVE_REPOSITORY_EFFECT","depends_on":["EVIDENCE_GRAPH"]},
+    {"ordinal":11,"id":"DETERMINISTIC_REPLAY","activity":"ObserveDeterministicReplay","stage":"REPLAY","step":"OBSERVE_DETERMINISTIC_REPLAY","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"DETERMINISTIC_REPLAY_OBSERVED","unknown_reason":"REPLAY_OBSERVATION_UNAVAILABLE","next_operation":"REPLAY_GENERATION","depends_on":["EVIDENCE_GRAPH"]},
+    {"ordinal":12,"id":"ADVERSARIAL_UNKNOWN_TRACE","activity":"PreserveAdversarialUnknownTrace","stage":"UNCERTAINTY","step":"PRESERVE_ADVERSARIAL_UNKNOWN_TRACE","proof_choice":"REGRESSION","indicator_class":"GUARDRAIL","closed_reason":"ADVERSARIAL_UNKNOWN_TRACE_PRESERVED","unknown_reason":"UNKNOWN_TRACE_UNAVAILABLE","next_operation":"PRESERVE_UNKNOWN_TRACE","depends_on":["EVIDENCE_GRAPH"]}
+  ]
+}
