@@ -17,9 +17,19 @@ The user-facing question is narrow:
 2. The fixed denominator names the twelve observations required to close it.
 3. DTCG, parsed Code Connect, source code, generated outputs, and lineage files
    are external evidence.
-4. The released Gooo CLI supplies version and syntax/diagnostic receipts.
+4. The released Gooo CLI supplies version, syntax/diagnostic, source-digest,
+   semantic-IR, and activity-node receipts through `gooo-graph/v1`.
 5. The repository-owned evaluator reduces evidence to CLOSED, UNKNOWN, or
    REFUTED without claiming compiler-level cross-format semantics.
+
+The v2 resolution is explicit: the compiler binds the exact source digest and
+complete activity identity set. `gooo-graph/v1` does not expose activity source
+spans, so source-span binding remains `NOT_AVAILABLE`.
+
+The released commands currently have different semantic depth. A URI-unsafe
+namespace can receive an `ok` syntax/check receipt and then fail graph semantic
+lowering. CI preserves this as a refuted compiler-depth counterexample rather
+than treating the earlier receipt as semantic success.
 
 Generated files never become the authority merely because they compile or have
 the same final value as a token.

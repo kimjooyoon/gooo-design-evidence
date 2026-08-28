@@ -14,8 +14,8 @@ work="$output/work"
 mkdir -p "$work"
 
 repository="kimjooyoon/gooo-design-evidence"
-denominator="$root/contracts/design-evidence-denominator-v1.json"
-base_lock="$root/contracts/core-release-lock-v1.json"
+denominator="$root/contracts/design-evidence-denominator-v2.json"
+base_lock="$root/contracts/core-release-lock-v2.json"
 projection="$root/examples/button-system/main.gooo"
 fixture="$root/fixtures/button-system"
 subject_sha=$(git -C "$root" rev-parse HEAD)
@@ -157,17 +157,26 @@ test -n "$gooo_binary"
 chmod +x "$gooo_binary"
 "$gooo_binary" version --json > "$work/version.json"
 "$gooo_binary" check --json "$projection" > "$work/check.json"
+"$gooo_binary" graph dump "$projection" > "$work/graph.json"
 
 version_schema=$(jq -r '.schema_version' "$work/version.json")
 check_schema=$(jq -r '.schema_version' "$work/check.json")
+graph_schema=$(jq -r '.schema_version' "$work/graph.json")
+graph_source_digest=$(jq -r '.source_digest' "$work/graph.json")
+projection_sha256=$(digest_file "$projection")
+projection_hex=$(printf '%s' "$projection_sha256" | sed 's/^sha256://')
 version_status=$(jq -r '.status' "$work/version.json")
 check_status=$(jq -r '.status' "$work/check.json")
 expected_version_schema=$(jq -r '.runtime.version_schema' "$base_lock")
 expected_check_schema=$(jq -r '.runtime.check_schema' "$base_lock")
+expected_graph_schema=$(jq -r '.runtime.graph_schema' "$base_lock")
 cli_state="CLOSED"
 if [ "$version_schema" != "$expected_version_schema" ] \
   || [ "$check_schema" != "$expected_check_schema" ] \
-  || [ "$check_status" != "ok" ]; then
+  || [ "$graph_schema" != "$expected_graph_schema" ] \
+  || [ "$graph_source_digest" != "$projection_hex" ] \
+  || [ "$check_status" != "ok" ] \
+  || ! jq -e '.ir.status == "available" and (.ir.semantic_digest | length) > 0 and (.graph_hash | length) > 0' "$work/graph.json" >/dev/null; then
   cli_state="REFUTED"
 fi
 
@@ -178,6 +187,7 @@ jq -S -n \
   --argjson checksum_verified true \
   --slurpfile version "$work/version.json" \
   --slurpfile check "$work/check.json" \
+  --slurpfile graph "$work/graph.json" \
   '{
     schema: $schema,
     subject_sha: $subject_sha,
@@ -186,15 +196,18 @@ jq -S -n \
       checksum_verified: $checksum_verified
     },
     version: $version[0],
-    check: $check[0]
+    check: $check[0],
+    graph: $graph[0]
   }' > "$output/runtime.json"
 
-meta_bound=0
-while IFS= read -r activity; do
-  if grep -Eq "^activity[[:space:]]+$activity\\(" "$projection"; then
-    meta_bound=$((meta_bound + 1))
-  fi
-done < <(jq -r '.cells[].activity' "$denominator")
+expected_activities=$(jq -S -c '[.cells[].activity] | sort' "$denominator")
+observed_activities=$(jq -S -c '[.nodes[] | select(.kind == "Activity") | .name] | sort' "$work/graph.json")
+meta_bound=$(jq -n --argjson expected "$expected_activities" --argjson observed "$observed_activities" \
+  '$expected - ($expected - $observed) | length')
+semantic_binding_state="CLOSED"
+if [ "$expected_activities" != "$observed_activities" ]; then
+  semantic_binding_state="REFUTED"
+fi
 
 if [ "$(jq -r '.target_cells' "$denominator")" -ne 12 ] \
   || [ "$(jq '.cells | length' "$denominator")" -ne 12 ] \
@@ -255,6 +268,7 @@ build_report() {
     || [ ! -f "$candidate_fixture/button.tsx" ] \
     || [ ! -f "$candidate_fixture/generated/tokens.css" ] \
     || [ ! -f "$candidate_fixture/generated/tokens.ios.json" ] \
+    || [ "$semantic_binding_state" != "CLOSED" ] \
     || [ "$meta_bound" -ne 12 ]; then
     source_state="REFUTED"
   fi
@@ -338,15 +352,15 @@ build_report() {
   fi
 
   receipt_state="$cli_state"
-  local receipt_reason="RELEASED_CHECK_RECEIPTS_OBSERVED"
+  local receipt_reason="RELEASED_SEMANTIC_RECEIPTS_OBSERVED"
   local receipt_next="NONE"
   if [ "$release_state" != "CLOSED" ]; then
     receipt_state="UNKNOWN"
     receipt_reason="DEPENDENCY_BLOCKED_BY_RELEASE_IDENTITY"
     receipt_next="RESOLVE_GOOO_RELEASE_IDENTITY"
   elif [ "$receipt_state" != "CLOSED" ]; then
-    receipt_reason="RELEASED_CHECK_RECEIPT_MISMATCH"
-    receipt_next="RESTORE_RELEASED_CHECK_SCHEMA"
+    receipt_reason="RELEASED_SEMANTIC_RECEIPT_MISMATCH"
+    receipt_next="RESTORE_RELEASED_SEMANTIC_SCHEMAS"
   fi
 
   replay_state="CLOSED"
@@ -374,7 +388,7 @@ build_report() {
     "$source_state" \
     "$([ "$source_state" = CLOSED ] && echo DESIGN_SOURCE_BUNDLE_OBSERVED || echo DESIGN_SOURCE_BUNDLE_INVALID)" \
     "$([ "$source_state" = CLOSED ] && echo NONE || echo RESTORE_DESIGN_SOURCE_BUNDLE)" >> "$cells_file"
-  cell 4 RELEASED_CHECK_RECEIPT FOUNDATION ObserveReleasedCheckReceipt \
+  cell 4 RELEASED_SEMANTIC_RECEIPTS FOUNDATION ObserveReleasedSemanticReceipts \
     "$receipt_state" "$receipt_reason" "$receipt_next" >> "$cells_file"
   cell 5 TOKEN_CLAIM_EVIDENCED COHERENCE BindTokenClaims \
     "$token_state" "$token_reason" "$token_next" >> "$cells_file"
@@ -402,6 +416,14 @@ build_report() {
     "$trace_state" \
     "$([ "$trace_state" = CLOSED ] && echo ADVERSARIAL_UNKNOWN_TRACE_PRESERVED || echo UNKNOWN_TRACE_NOT_PRESERVED)" \
     "$([ "$trace_state" = CLOSED ] && echo NONE || echo CONSUME_PREDECESSOR_CLAIM_TRACE)" >> "$cells_file"
+
+  local expected_cell_identity observed_cell_identity
+  expected_cell_identity=$(jq -S -c '[.cells[] | {ordinal,id,proof,activity}]' "$denominator")
+  observed_cell_identity=$(jq -S -s -c '[.[] | {ordinal,id,proof,activity}]' "$cells_file")
+  if [ "$expected_cell_identity" != "$observed_cell_identity" ]; then
+    echo 'report cell identity does not match the versioned denominator' >&2
+    exit 1
+  fi
 
   local closed unknown refuted total decision resolution claim_status claim_state problem stage step reason next_operation
   total=$(wc -l < "$cells_file" | tr -d ' ')
@@ -467,15 +489,15 @@ build_report() {
     --argjson difference_count "$difference_count" \
     --argjson edge_count "$edge_count" \
     --argjson repository_writes "$repository_writes" \
-    --argjson cli_receipts "$([ "$receipt_state" = CLOSED ] && echo 2 || echo 0)" '
+    --argjson cli_receipts "$([ "$receipt_state" = CLOSED ] && echo 3 || echo 0)" '
       [
-        {id:"gooo.metric.design-evidence.readiness.v1",value:$closed,total:12,state:(if $closed == 12 then "SATISFIED" else "GAP" end)},
-        {id:"gooo.metric.design-evidence.meta-binding.v1",value:$meta_bound,total:12,state:(if $meta_bound == 12 then "SATISFIED" else "GAP" end)},
+        {id:"gooo.metric.design-evidence.readiness.v2",value:$closed,total:12,state:(if $closed == 12 then "SATISFIED" else "GAP" end)},
+        {id:"gooo.metric.design-evidence.meta-binding.v2",value:$meta_bound,total:12,state:(if $meta_bound == 12 then "SATISFIED" else "GAP" end)},
         {id:"gooo.metric.design-evidence.claim-edges.v1",value:$edge_count,total:9,state:(if $edge_count == 9 then "SATISFIED" else "GAP" end)},
         {id:"gooo.metric.design-evidence.property-mappings.v1",value:$mapping_count,total:2,state:(if $mapping_count == 2 then "SATISFIED" else "GAP" end)},
         {id:"gooo.metric.design-evidence.token-lineage.v1",value:$token_lineage,total:3,state:(if $token_lineage == 3 then "SATISFIED" else "GAP" end)},
         {id:"gooo.metric.design-evidence.intentional-differences.v1",value:$difference_count,total:1,state:(if $difference_count == 1 then "SATISFIED" else "GAP" end)},
-        {id:"gooo.metric.design-evidence.released-cli-receipts.v1",value:$cli_receipts,total:2,state:(if $cli_receipts == 2 then "SATISFIED" else "GAP" end)},
+        {id:"gooo.metric.design-evidence.released-cli-receipts.v2",value:$cli_receipts,total:3,state:(if $cli_receipts == 3 then "SATISFIED" else "GAP" end)},
         {id:"gooo.metric.design-evidence.unknown-prerequisites.v1",value:$unknown,total:12,state:(if $unknown == 0 then "SATISFIED" else "GAP" end)},
         {id:"gooo.metric.design-evidence.refuted-prerequisites.v1",value:$refuted,total:12,state:(if $refuted == 0 then "SATISFIED" else "GAP" end)},
         {id:"gooo.metric.design-evidence.repository-writes.v1",value:$repository_writes,total:1,state:(if $repository_writes == 0 then "SATISFIED" else "GAP" end)}
@@ -484,7 +506,7 @@ build_report() {
 
   body="$work/body-$RANDOM.json"
   jq -S -n \
-    --arg schema "gooo/design-evidence-readiness-report/v1" \
+    --arg schema "gooo/design-evidence-readiness-report/v2" \
     --arg subject_repository "$repository" \
     --arg subject_sha "$subject_sha" \
     --arg denominator_digest "$(canonical_digest "$denominator")" \
@@ -519,6 +541,11 @@ build_report() {
     --arg version_status "$version_status" \
     --arg check_schema "$check_schema" \
     --arg check_status "$check_status" \
+    --arg graph_schema "$graph_schema" \
+    --arg graph_hash "$(jq -r '.graph_hash' "$work/graph.json")" \
+    --arg graph_source_digest "$(jq -r '.source_digest' "$work/graph.json")" \
+    --arg semantic_ir_digest "$(jq -r '.ir.semantic_digest' "$work/graph.json")" \
+    --arg semantic_binding_state "$semantic_binding_state" \
     --argjson cells "$cells_json" \
     --argjson indicators "$indicators" \
     --argjson proofs "$proofs" \
@@ -546,10 +573,21 @@ build_report() {
         indicators:$indicators,
         proofs:$proofs,
         evidence:{
-          authority:{projection_digest:$projection_digest,binding_type:"DECLARED_ACTIVITY_EXACT_NAME",compiler_semantic_binding:"NOT_CLAIMED"},
+          authority:{
+            projection_digest:$projection_digest,
+            binding_type:"RELEASED_GOOO_GRAPH_ACTIVITY_SET",
+            compiler_semantic_binding:(if $semantic_binding_state == "CLOSED" then "OBSERVED" else "REFUTED" end),
+            compiler_source_span_binding:"NOT_AVAILABLE",
+            cross_format_semantic_binding:"NOT_CLAIMED",
+            binding_resolution:"ACTIVITY_IDENTITY_AND_SOURCE_DIGEST",
+            graph_schema:$graph_schema,
+            graph_hash:$graph_hash,
+            graph_source_digest:$graph_source_digest,
+            semantic_ir_digest:$semantic_ir_digest
+          },
           design:{tokens_digest:$token_digest,code_connect_digest:$code_connect_digest,code_digest:$code_digest,lineage_digest:$lineage_digest,intentional_difference_digest:$difference_digest},
           core_release:{tag:$core_tag,tag_object_sha:$core_tag_object,target_sha:$core_target,lock_digest:$release_lock_digest,binary_digest:$binary_digest},
-          released_cli:{version_schema:$version_schema,version_status:$version_status,check_schema:$check_schema,check_status:$check_status},
+          released_cli:{version_schema:$version_schema,version_status:$version_status,check_schema:$check_schema,check_status:$check_status,graph_schema:$graph_schema},
           repository:{before_digest:$before_digest,after_digest:$after_digest,writes:$repository_writes}
         }
       }
@@ -629,6 +667,42 @@ jq -e '
   and .summary.refuted == 1
 ' "$output/release-refuted.json" >/dev/null
 
+sed 's/^namespace designevidence$/namespace design_evidence/' \
+  "$projection" > "$work/invalid-namespace.gooo"
+"$gooo_binary" check --json "$work/invalid-namespace.gooo" > "$work/invalid-namespace-check.json"
+set +e
+"$gooo_binary" graph dump "$work/invalid-namespace.gooo" \
+  > "$work/invalid-namespace-graph.json" \
+  2> "$work/invalid-namespace-graph.stderr"
+invalid_graph_exit=$?
+set -e
+test "$invalid_graph_exit" -ne 0
+jq -e '.schema_version == "gooo/diagnostics/v1" and .status == "ok"' \
+  "$work/invalid-namespace-check.json" >/dev/null
+grep -Fq 'semantic.invalid' "$work/invalid-namespace-graph.stderr"
+jq -S -n \
+  --slurpfile check "$work/invalid-namespace-check.json" \
+  --argjson graph_exit "$invalid_graph_exit" \
+  '{
+    schema:"gooo/compiler-semantic-depth-counterexample/v1",
+    claim:{
+      id:"design://claim/compiler-command-semantic-depth",
+      status:"CONTESTED",
+      state:"REFUTED",
+      resolution:"CONTRADICTION_CLASS",
+      stage:"FOUNDATION",
+      step:"RELEASED_SEMANTIC_RECEIPTS",
+      reason:"SEMANTIC_LOWERING_REJECTED_AFTER_CHECK_OK",
+      next_operation:"USE_URI_SAFE_NAMESPACE"
+    },
+    observation:{
+      check_schema:$check[0].schema_version,
+      check_status:$check[0].status,
+      graph_exit:$graph_exit,
+      graph_diagnostic:"semantic.invalid"
+    }
+  }' > "$output/semantic-depth-refuted.json"
+
 final_digest=$(snapshot_repository)
 final_writes=0
 if [ "$before_digest" != "$final_digest" ]; then
@@ -649,8 +723,9 @@ jq -S -n \
   --slurpfile mapping "$output/mapping-unknown.json" \
   --slurpfile alias "$output/alias-refuted.json" \
   --slurpfile release "$output/release-refuted.json" \
+  --slurpfile semantic_depth "$output/semantic-depth-refuted.json" \
   '{
-    schema:"gooo/design-evidence-ci-receipt/v1",
+    schema:"gooo/design-evidence-ci-receipt/v2",
     transition:{
       initial:{closed:$initial[0].summary.closed,unknown:$initial[0].summary.unknown,refuted:$initial[0].summary.refuted,total:$initial[0].summary.total,report_digest:$initial[0].report_digest},
       final:{closed:$report[0].summary.closed,unknown:$report[0].summary.unknown,refuted:$report[0].summary.refuted,total:$report[0].summary.total,report_digest:$report[0].report_digest}
@@ -658,7 +733,8 @@ jq -S -n \
     counterexamples:{
       mapping:{state:$mapping[0].claim.state,stage:$mapping[0].claim.stage,step:$mapping[0].claim.step,reason:$mapping[0].claim.reason},
       alias:{state:$alias[0].claim.state,stage:$alias[0].claim.stage,step:$alias[0].claim.step,reason:$alias[0].claim.reason},
-      release:{state:$release[0].claim.state,stage:$release[0].claim.stage,step:$release[0].claim.step,reason:$release[0].claim.reason}
+      release:{state:$release[0].claim.state,stage:$release[0].claim.stage,step:$release[0].claim.step,reason:$release[0].claim.reason},
+      semantic_depth:{state:$semantic_depth[0].claim.state,stage:$semantic_depth[0].claim.stage,step:$semantic_depth[0].claim.step,reason:$semantic_depth[0].claim.reason}
     },
     deterministic_replay:true,
     repository_writes:0,

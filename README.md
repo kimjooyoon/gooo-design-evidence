@@ -6,8 +6,8 @@ code are connected by explicit evidence rather than by matching names or final
 values.
 
 The repository does not import the Gooo compiler source. CI downloads the
-digest-locked `v0.1.0-dev` executable and consumes only `version --json` and
-`check --json` receipts.
+digest-locked `v0.1.0-dev` executable and consumes only `version --json`,
+`check --json`, and `graph dump` receipts.
 
 ## First vertical slice
 
@@ -51,14 +51,17 @@ CI also proves three counterexamples:
 - a broken DTCG alias is `REFUTED`;
 - a one-byte-equivalent release digest contradiction is `REFUTED` before any
   fallback can run.
+- a URI-unsafe namespace accepted by `check` but rejected by semantic graph
+  lowering is preserved as a compiler-depth `REFUTED` receipt.
 
 ## Authority and evidence
 
 `examples/button-system/main.gooo` is the semantic authority for the twelve
 activities. JSON, TypeScript, CSS, shell evaluation, and CI reports are
-evidence or derived views. The current released compiler proves that the Gooo
-projection is accepted; it does not yet prove cross-format semantic identity.
-That boundary remains explicit in the report.
+evidence or derived views. In v2, `gooo-graph/v1` binds the activity identity
+set and exact source digest. Activity source spans are not exposed by that
+schema and remain `NOT_AVAILABLE`; cross-format design semantics remain
+`NOT_CLAIMED`.
 
 See `docs/rfcs/design-evidence-v1.md` for the decision model and exclusions.
 Read-only design-to-code semantic evidence evaluated with released Gooo
