@@ -51,6 +51,8 @@ CI also proves three counterexamples:
 - a broken DTCG alias is `REFUTED`;
 - a one-byte-equivalent release digest contradiction is `REFUTED` before any
   fallback can run.
+- a URI-unsafe namespace accepted by `check` but rejected by semantic graph
+  lowering is preserved as a compiler-depth `REFUTED` receipt.
 
 ## Authority and evidence
 

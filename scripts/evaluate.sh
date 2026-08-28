@@ -656,6 +656,42 @@ jq -e '
   and .summary.refuted == 1
 ' "$output/release-refuted.json" >/dev/null
 
+sed 's/^namespace designevidence$/namespace design_evidence/' \
+  "$projection" > "$work/invalid-namespace.gooo"
+"$gooo_binary" check --json "$work/invalid-namespace.gooo" > "$work/invalid-namespace-check.json"
+set +e
+"$gooo_binary" graph dump "$work/invalid-namespace.gooo" \
+  > "$work/invalid-namespace-graph.json" \
+  2> "$work/invalid-namespace-graph.stderr"
+invalid_graph_exit=$?
+set -e
+test "$invalid_graph_exit" -ne 0
+jq -e '.schema_version == "gooo/diagnostics/v1" and .status == "ok"' \
+  "$work/invalid-namespace-check.json" >/dev/null
+grep -Fq 'semantic.invalid' "$work/invalid-namespace-graph.stderr"
+jq -S -n \
+  --slurpfile check "$work/invalid-namespace-check.json" \
+  --argjson graph_exit "$invalid_graph_exit" \
+  '{
+    schema:"gooo/compiler-semantic-depth-counterexample/v1",
+    claim:{
+      id:"design://claim/compiler-command-semantic-depth",
+      status:"CONTESTED",
+      state:"REFUTED",
+      resolution:"CONTRADICTION_CLASS",
+      stage:"FOUNDATION",
+      step:"RELEASED_SEMANTIC_RECEIPTS",
+      reason:"SEMANTIC_LOWERING_REJECTED_AFTER_CHECK_OK",
+      next_operation:"USE_URI_SAFE_NAMESPACE"
+    },
+    observation:{
+      check_schema:$check[0].schema_version,
+      check_status:$check[0].status,
+      graph_exit:$graph_exit,
+      graph_diagnostic:"semantic.invalid"
+    }
+  }' > "$output/semantic-depth-refuted.json"
+
 final_digest=$(snapshot_repository)
 final_writes=0
 if [ "$before_digest" != "$final_digest" ]; then
@@ -676,6 +712,7 @@ jq -S -n \
   --slurpfile mapping "$output/mapping-unknown.json" \
   --slurpfile alias "$output/alias-refuted.json" \
   --slurpfile release "$output/release-refuted.json" \
+  --slurpfile semantic_depth "$output/semantic-depth-refuted.json" \
   '{
     schema:"gooo/design-evidence-ci-receipt/v2",
     transition:{
@@ -685,7 +722,8 @@ jq -S -n \
     counterexamples:{
       mapping:{state:$mapping[0].claim.state,stage:$mapping[0].claim.stage,step:$mapping[0].claim.step,reason:$mapping[0].claim.reason},
       alias:{state:$alias[0].claim.state,stage:$alias[0].claim.stage,step:$alias[0].claim.step,reason:$alias[0].claim.reason},
-      release:{state:$release[0].claim.state,stage:$release[0].claim.stage,step:$release[0].claim.step,reason:$release[0].claim.reason}
+      release:{state:$release[0].claim.state,stage:$release[0].claim.stage,step:$release[0].claim.step,reason:$release[0].claim.reason},
+      semantic_depth:{state:$semantic_depth[0].claim.state,stage:$semantic_depth[0].claim.stage,step:$semantic_depth[0].claim.step,reason:$semantic_depth[0].claim.reason}
     },
     deterministic_replay:true,
     repository_writes:0,
