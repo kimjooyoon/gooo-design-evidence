@@ -1,0 +1,105 @@
+{
+  "schema": "gooo/design-evidence-denominator/v2",
+  "id": "gooo://denominator/design-evidence-readiness/v2",
+  "target_cells": 12,
+  "proof_totals": [
+    {
+      "choice": "FOUNDATION",
+      "total": 4
+    },
+    {
+      "choice": "COHERENCE",
+      "total": 5
+    },
+    {
+      "choice": "REGRESSION",
+      "total": 3
+    }
+  ],
+  "cells": [
+    {
+      "ordinal": 1,
+      "id": "SUBJECT_PUBLIC",
+      "proof": "FOUNDATION",
+      "activity": "ObservePublicSubject",
+      "pass_condition": "The public repository identity and exact source commit are observed."
+    },
+    {
+      "ordinal": 2,
+      "id": "GOOO_RELEASE_IDENTITY",
+      "proof": "FOUNDATION",
+      "activity": "LockGoooReleaseIdentity",
+      "pass_condition": "Tag object, target commit, complete asset set, sizes, and digests match the lock."
+    },
+    {
+      "ordinal": 3,
+      "id": "DESIGN_SOURCE_BUNDLE",
+      "proof": "FOUNDATION",
+      "activity": "ObserveDesignSourceBundle",
+      "pass_condition": "DTCG, Code Connect, generated outputs, code, and all twelve semantic Gooo activity nodes are digest-bound."
+    },
+    {
+      "ordinal": 4,
+      "id": "RELEASED_SEMANTIC_RECEIPTS",
+      "proof": "FOUNDATION",
+      "activity": "ObserveReleasedSemanticReceipts",
+      "pass_condition": "The released CLI emits matching version, check, and graph receipts, including exact source and semantic IR digests."
+    },
+    {
+      "ordinal": 5,
+      "id": "TOKEN_CLAIM_EVIDENCED",
+      "proof": "COHERENCE",
+      "activity": "BindTokenClaims",
+      "pass_condition": "Three token claims retain type, value or alias, JSON Pointer, and source digest."
+    },
+    {
+      "ordinal": 6,
+      "id": "FIGMA_CODE_MAP",
+      "proof": "COHERENCE",
+      "activity": "BindFigmaCodeProperties",
+      "pass_condition": "Two required design properties map exactly once to typed code properties."
+    },
+    {
+      "ordinal": 7,
+      "id": "CODE_TOKEN_LINEAGE",
+      "proof": "COHERENCE",
+      "activity": "BindCodeTokenLineage",
+      "pass_condition": "Every observed token use has an explicit edge to the originating DTCG token."
+    },
+    {
+      "ordinal": 8,
+      "id": "INTENTIONAL_DIFFERENCE",
+      "proof": "COHERENCE",
+      "activity": "ReviewIntentionalDifference",
+      "pass_condition": "The one platform difference has reason, scope, owner, reviewer, and expiry."
+    },
+    {
+      "ordinal": 9,
+      "id": "GRAPH_COHERENCE",
+      "proof": "COHERENCE",
+      "activity": "EvaluateEvidenceGraph",
+      "pass_condition": "Nine unique lineage edges have resolvable endpoints and no orphan mapping."
+    },
+    {
+      "ordinal": 10,
+      "id": "ZERO_WRITE",
+      "proof": "REGRESSION",
+      "activity": "ObserveZeroRepositoryWrite",
+      "pass_condition": "The exact repository snapshot is unchanged and repository writes equal zero."
+    },
+    {
+      "ordinal": 11,
+      "id": "REPLAY_STABLE",
+      "proof": "REGRESSION",
+      "activity": "ObserveDeterministicReplay",
+      "pass_condition": "Two evaluations over identical evidence produce byte-identical canonical reports."
+    },
+    {
+      "ordinal": 12,
+      "id": "ADVERSARIAL_UNKNOWN_TRACE",
+      "proof": "REGRESSION",
+      "activity": "PreserveAdversarialUnknownTrace",
+      "pass_condition": "The predecessor UNKNOWN and injected contradictions retain exact claim coordinates."
+    }
+  ]
+}
