@@ -1,0 +1,236 @@
+name: Claim resolution primitive adoption
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adoption:
+    runs-on: ubuntu-latest
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+
+      - name: Bind exact subject identity
+        run: test "$(git rev-parse HEAD)" = "$SUBJECT_SHA"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.0'
+
+      - name: Observe Go 1.27 and fix surface
+        run: |
+          set -euo pipefail
+          test "$(go env GOVERSION)" = "go1.27.0"
+          go_files=$(find . -type f -name '*.go' | wc -l | tr -d ' ')
+          go_modules=$(find . -type f -name 'go.mod' | wc -l | tr -d ' ')
+          while IFS= read -r -d '' module; do
+            (cd "$(dirname "$module")" && go fix ./...)
+          done < <(find . -type f -name 'go.mod' -print0)
+          jq -n --arg go_version "$(go env GOVERSION)" --argjson go_files "$go_files" --argjson go_modules "$go_modules" \
+            '{schema:"gooo/design-evidence/go-fix-observation/v1",go_version:$go_version,
+              go_files:$go_files,go_modules:$go_modules,go_fix_targets:$go_modules}' > "$RUNNER_TEMP/go-fix-observation.json"
+
+      - name: Observe immutable core and matcher releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          core_lock=contracts/core-release-lock-v3.json
+          matcher_lock=contracts/design-matcher-v0.5-release-lock-v1.json
+          for tuple in "core:$core_lock" "matcher:$matcher_lock"; do
+            key=${tuple%%:*}; lock=${tuple#*:}
+            repository=$(jq -r .repository "$lock")
+            tag=$(jq -r .tag "$lock")
+            gh api "repos/$repository/releases/tags/$tag" > "$RUNNER_TEMP/$key-release.json"
+            gh api "repos/$repository/git/ref/tags/$tag" > "$RUNNER_TEMP/$key-ref.json"
+            jq -e --slurpfile lock "$lock" '
+              .tag_name==$lock[0].tag and .draft==false and
+              ([.assets[]|select(.id==$lock[0].asset.id and .name==$lock[0].asset.name and
+                .size==$lock[0].asset.size and .digest==("sha256:"+$lock[0].asset.sha256))]|length)==1
+            ' "$RUNNER_TEMP/$key-release.json" >/dev/null
+            jq -e --slurpfile lock "$lock" '.object.type==$lock[0].ref_type and .object.sha==$lock[0].tag_object_sha' \
+              "$RUNNER_TEMP/$key-ref.json" >/dev/null
+          done
+
+      - name: Download digest-locked release bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          core_lock=contracts/core-release-lock-v3.json
+          matcher_lock=contracts/design-matcher-v0.5-release-lock-v1.json
+          core_id=$(jq -r .asset.id "$core_lock")
+          matcher_id=$(jq -r .asset.id "$matcher_lock")
+          gh api -H 'Accept: application/octet-stream' "repos/kimjooyoon/meta-ontology-go/releases/assets/$core_id" > "$RUNNER_TEMP/gooo.tar.gz"
+          gh api -H 'Accept: application/octet-stream' "repos/kimjooyoon/gooo-design-evidence/releases/assets/$matcher_id" > "$RUNNER_TEMP/matcher.zip"
+          test "$(sha256sum "$RUNNER_TEMP/gooo.tar.gz" | awk '{print $1}')" = "$(jq -r .asset.sha256 "$core_lock")"
+          test "$(sha256sum "$RUNNER_TEMP/matcher.zip" | awk '{print $1}')" = "$(jq -r .asset.sha256 "$matcher_lock")"
+          mkdir -p "$RUNNER_TEMP/gooo" "$RUNNER_TEMP/matcher"
+          tar -xzf "$RUNNER_TEMP/gooo.tar.gz" -C "$RUNNER_TEMP/gooo"
+          unzip -q "$RUNNER_TEMP/matcher.zip" -d "$RUNNER_TEMP/matcher"
+
+      - name: Resolve Gooo claim value programs
+        run: |
+          set -euo pipefail
+          gooo="$RUNNER_TEMP/gooo/gooo"
+          source=examples/claim-resolution-adoption/main.gooo
+          "$gooo" check --json "$source" > "$RUNNER_TEMP/adoption-syntax.json"
+          "$gooo" check --semantic --json "$source" > "$RUNNER_TEMP/adoption-semantic.json"
+          "$gooo" graph dump "$source" > "$RUNNER_TEMP/adoption-graph.json"
+          before="$RUNNER_TEMP/repository-before.bin"
+          after="$RUNNER_TEMP/repository-after.bin"
+          git status --porcelain=v1 -z --untracked-files=all > "$before"
+          start_ns=$(date +%s%N)
+          /usr/bin/time -f '%M' -o "$RUNNER_TEMP/claim-rss" \
+            "$gooo" claim resolve "$source" --activity ResolveDesignClosedClaim --json > "$RUNNER_TEMP/claim-closed.json"
+          "$gooo" claim resolve "$source" --activity ResolveMissingEvidenceUnknown --json > "$RUNNER_TEMP/claim-missing.json"
+          "$gooo" claim resolve "$source" --activity ResolveNameOnlyUnknown --json > "$RUNNER_TEMP/claim-name-only.json"
+          "$gooo" claim resolve "$source" --activity ResolveDesignContradiction --json > "$RUNNER_TEMP/claim-refuted.json"
+          if "$gooo" claim resolve "$source" --activity RejectIncompleteUnknown --json > "$RUNNER_TEMP/claim-invalid-unknown.json"; then
+            echo 'core accepted incomplete UNKNOWN' >&2; exit 1
+          fi
+          if "$gooo" claim resolve "$source" --activity RejectUnrecognizedState --json > "$RUNNER_TEMP/claim-invalid-state.json"; then
+            echo 'core accepted unrecognized claim state' >&2; exit 1
+          fi
+          end_ns=$(date +%s%N)
+          wall_ms=$(( (end_ns-start_ns)/1000000 ))
+
+          mkdir -p "$RUNNER_TEMP/claim-replay"
+          "$gooo" claim resolve "$source" --activity ResolveDesignClosedClaim --json > "$RUNNER_TEMP/claim-replay/closed.json"
+          "$gooo" claim resolve "$source" --activity ResolveMissingEvidenceUnknown --json > "$RUNNER_TEMP/claim-replay/missing.json"
+          "$gooo" claim resolve "$source" --activity ResolveNameOnlyUnknown --json > "$RUNNER_TEMP/claim-replay/name.json"
+          "$gooo" claim resolve "$source" --activity ResolveDesignContradiction --json > "$RUNNER_TEMP/claim-replay/refuted.json"
+          "$gooo" claim resolve "$source" --activity RejectIncompleteUnknown --json > "$RUNNER_TEMP/claim-replay/invalid-unknown.json" || true
+          "$gooo" claim resolve "$source" --activity RejectUnrecognizedState --json > "$RUNNER_TEMP/claim-replay/invalid-state.json" || true
+          equal=0
+          for pair in 'claim-closed.json:closed.json' 'claim-missing.json:missing.json' 'claim-name-only.json:name.json' \
+            'claim-refuted.json:refuted.json' 'claim-invalid-unknown.json:invalid-unknown.json' 'claim-invalid-state.json:invalid-state.json'; do
+            first=${pair%%:*}; second=${pair#*:}
+            if cmp -s "$RUNNER_TEMP/$first" "$RUNNER_TEMP/claim-replay/$second"; then equal=$((equal+1)); fi
+          done
+          jq -S -n --argjson equal "$equal" \
+            '{schema:"gooo/design-evidence/claim-resolution-replay/v1",receipts_compared:6,
+              receipts_equal:$equal,deterministic:($equal==6)}' > "$RUNNER_TEMP/claim-replay.json"
+          git status --porcelain=v1 -z --untracked-files=all > "$after"
+          if cmp -s "$before" "$after"; then writes=0; else writes=1; fi
+          jq -S -n --arg subject_sha "$SUBJECT_SHA" --arg go_version "$(go env GOVERSION)" \
+            --argjson peak_rss_kib "$(cat "$RUNNER_TEMP/claim-rss")" --argjson wall_ms "$wall_ms" --argjson writes "$writes" \
+            '{schema:"gooo/design-evidence/claim-resolution-adoption-runtime/v1",subject_sha:$subject_sha,
+              go_version:$go_version,peak_rss_kib:$peak_rss_kib,wall_ms:$wall_ms,
+              repository_writes:$writes,local_tests_run:0,cross_project_required_gates:0}' > "$RUNNER_TEMP/adoption-runtime.json"
+
+      - name: Evaluate direct consumer adoption and counterexamples
+        run: |
+          set -euo pipefail
+          evaluator=scripts/evaluate-claim-resolution-adoption.sh
+          matcher="$RUNNER_TEMP/matcher"
+          args=(
+            "$RUNNER_TEMP/adoption-graph.json" contracts/claim-resolution-adoption-denominator-v1.json
+            "$RUNNER_TEMP/claim-closed.json" "$RUNNER_TEMP/claim-missing.json"
+            "$RUNNER_TEMP/claim-name-only.json" "$RUNNER_TEMP/claim-refuted.json"
+            "$RUNNER_TEMP/claim-invalid-unknown.json" "$RUNNER_TEMP/claim-invalid-state.json"
+            "$matcher/matcher-normal.json" "$matcher/matcher-unknown.json"
+            "$matcher/matcher-name-only.json" "$matcher/matcher-refuted.json"
+            "$RUNNER_TEMP/claim-replay.json"
+          )
+          bash "$evaluator" "${args[@]}" "$RUNNER_TEMP/adoption-report.json" "$SUBJECT_SHA" complete
+          bash "$evaluator" "${args[@]}" "$RUNNER_TEMP/adoption-report-replay.json" "$SUBJECT_SHA" complete
+          cmp -s "$RUNNER_TEMP/adoption-report.json" "$RUNNER_TEMP/adoption-report-replay.json"
+
+          printf 'null\n' > "$RUNNER_TEMP/missing-core-receipt.json"
+          missing_args=("${args[@]}")
+          missing_args[3]="$RUNNER_TEMP/missing-core-receipt.json"
+          bash "$evaluator" "${missing_args[@]}" "$RUNNER_TEMP/adoption-unknown.json" "$SUBJECT_SHA" missing-receipt
+
+          jq '.claim.unknown_class="CONTEXT_MISSING"' "$matcher/matcher-unknown.json" > "$RUNNER_TEMP/tampered-matcher-unknown.json"
+          mismatch_args=("${args[@]}")
+          mismatch_args[9]="$RUNNER_TEMP/tampered-matcher-unknown.json"
+          bash "$evaluator" "${mismatch_args[@]}" "$RUNNER_TEMP/adoption-mismatch-refuted.json" "$SUBJECT_SHA" matcher-claim-tamper
+
+          jq '.decision="CLAIM_RESOLUTION_OBSERVED"' "$RUNNER_TEMP/claim-invalid-state.json" > "$RUNNER_TEMP/invalid-core-decision.json"
+          decision_args=("${args[@]}")
+          decision_args[7]="$RUNNER_TEMP/invalid-core-decision.json"
+          bash "$evaluator" "${decision_args[@]}" "$RUNNER_TEMP/adoption-core-refuted.json" "$SUBJECT_SHA" invalid-core-decision
+
+          jq '.authority.repository_writes=1' "$RUNNER_TEMP/claim-closed.json" > "$RUNNER_TEMP/escalated-core-receipt.json"
+          scope_args=("${args[@]}")
+          scope_args[2]="$RUNNER_TEMP/escalated-core-receipt.json"
+          bash "$evaluator" "${scope_args[@]}" "$RUNNER_TEMP/adoption-scope-refuted.json" "$SUBJECT_SHA" scope-escalation
+
+          jq '(.nodes)|=map(select(.name!="RecordIndependentAdoption"))' "$RUNNER_TEMP/adoption-graph.json" > "$RUNNER_TEMP/missing-adoption-activity.json"
+          missing_meta_args=("${args[@]}")
+          missing_meta_args[0]="$RUNNER_TEMP/missing-adoption-activity.json"
+          if bash "$evaluator" "${missing_meta_args[@]}" "$RUNNER_TEMP/missing-meta.json" "$SUBJECT_SHA" complete; then
+            echo 'evaluator accepted a missing Gooo adoption activity' >&2; exit 1
+          fi
+
+          jq -e '.decision=="CLAIM_RESOLUTION_ADOPTION_OBSERVED" and .summary.closed_cells==12 and
+            .summary.claim_scenarios_resolved==4 and .summary.matcher_claims_matched==4 and
+            .summary.rejection_scenarios_observed==2 and .summary.claim_fields_observed==24 and
+            .summary.independent_consumer_adoptions==1 and .summary.repository_writes==0 and
+            .summary.local_tests_run==0 and .summary.cross_project_required_gates==0' "$RUNNER_TEMP/adoption-report.json" >/dev/null
+          jq -e '.decision=="CLAIM_RESOLUTION_ADOPTION_UNKNOWN" and .summary.closed_cells==9 and
+            .summary.unknown_cells==3 and .claim.reason=="CORE_CLAIM_RESOLUTION_RECEIPT_UNAVAILABLE" and
+            .claim.unknown_class=="DIRECT_MISSING"' "$RUNNER_TEMP/adoption-unknown.json" >/dev/null
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed_cells==11 and .summary.refuted_cells==1 and
+            .claim.reason=="MATCHER_CORE_CLAIM_MISMATCH"' "$RUNNER_TEMP/adoption-mismatch-refuted.json" >/dev/null
+          jq -e '.decision=="FAIL_CLOSED" and .claim.reason=="INVALID_CORE_CLAIM_DECISION"' "$RUNNER_TEMP/adoption-core-refuted.json" >/dev/null
+          jq -e '.decision=="FAIL_CLOSED" and .claim.reason=="CORE_REPOSITORY_WRITE_AUTHORITY_ESCALATION"' "$RUNNER_TEMP/adoption-scope-refuted.json" >/dev/null
+
+      - name: Publish exact human-readable adoption metrics
+        run: |
+          {
+            echo '## Claim resolution primitive adoption'
+            echo
+            jq -r '
+              "- adoption cells: \(.summary.closed_cells)/\(.summary.total_cells) CLOSED",
+              "- matcher scenarios resolved by core: \(.summary.claim_scenarios_resolved)/\(.summary.claim_scenarios_total)",
+              "- matcher/core claim equality: \(.summary.matcher_claims_matched)/\(.summary.matcher_claims_total)",
+              "- rejected invalid tuples: \(.summary.rejection_scenarios_observed)/\(.summary.rejection_scenarios_total)",
+              "- claim fields: \(.summary.claim_fields_observed)/\(.summary.claim_fields_total)",
+              "- independent consumer adoptions: \(.summary.independent_consumer_adoptions)",
+              "- repository writes: \(.summary.repository_writes)",
+              "- local tests: \(.summary.local_tests_run)",
+              "- cross-project required gates: \(.summary.cross_project_required_gates)",
+              "- next operation: \(.claim.next_operation)"
+            ' "$RUNNER_TEMP/adoption-report.json"
+            jq -r '"- peak RSS: \(.peak_rss_kib) KiB", "- wall time: \(.wall_ms) ms", "- Go toolchain: \(.go_version)"' \
+              "$RUNNER_TEMP/adoption-runtime.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce zero repository writes
+        run: test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: claim-resolution-adoption-${{ env.SUBJECT_SHA }}
+          path: |
+            ${{ runner.temp }}/go-fix-observation.json
+            ${{ runner.temp }}/adoption-syntax.json
+            ${{ runner.temp }}/adoption-semantic.json
+            ${{ runner.temp }}/adoption-graph.json
+            ${{ runner.temp }}/claim-closed.json
+            ${{ runner.temp }}/claim-missing.json
+            ${{ runner.temp }}/claim-name-only.json
+            ${{ runner.temp }}/claim-refuted.json
+            ${{ runner.temp }}/claim-invalid-unknown.json
+            ${{ runner.temp }}/claim-invalid-state.json
+            ${{ runner.temp }}/claim-replay.json
+            ${{ runner.temp }}/adoption-report.json
+            ${{ runner.temp }}/adoption-report-replay.json
+            ${{ runner.temp }}/adoption-unknown.json
+            ${{ runner.temp }}/adoption-mismatch-refuted.json
+            ${{ runner.temp }}/adoption-core-refuted.json
+            ${{ runner.temp }}/adoption-scope-refuted.json
+            ${{ runner.temp }}/adoption-runtime.json
+          if-no-files-found: warn
