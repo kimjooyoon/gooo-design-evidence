@@ -1,0 +1,8 @@
+{
+  "colorBlue": "#1463ff",
+  "colorAction": "colorBlue",
+  "radiusButton": {
+    "unit": "pt",
+    "value": 6
+  }
+}

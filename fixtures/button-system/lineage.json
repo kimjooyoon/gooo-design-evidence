@@ -1,0 +1,113 @@
+{
+  "schema": "gooo/design-lineage/v1",
+  "edges": [
+    {
+      "id": "edge-token-blue-css",
+      "relation": "DERIVED_AS",
+      "from": {
+        "kind": "DTCG_TOKEN",
+        "locator": "/color/blue"
+      },
+      "to": {
+        "kind": "CSS_SYMBOL",
+        "locator": "--color-blue"
+      }
+    },
+    {
+      "id": "edge-token-action-css",
+      "relation": "DERIVED_AS",
+      "from": {
+        "kind": "DTCG_TOKEN",
+        "locator": "/color/action"
+      },
+      "to": {
+        "kind": "CSS_SYMBOL",
+        "locator": "--color-action"
+      }
+    },
+    {
+      "id": "edge-token-radius-css",
+      "relation": "DERIVED_AS",
+      "from": {
+        "kind": "DTCG_TOKEN",
+        "locator": "/radius/button"
+      },
+      "to": {
+        "kind": "CSS_SYMBOL",
+        "locator": "--radius-button"
+      }
+    },
+    {
+      "id": "edge-token-radius-ios",
+      "relation": "INTENTIONALLY_DERIVED_AS",
+      "from": {
+        "kind": "DTCG_TOKEN",
+        "locator": "/radius/button"
+      },
+      "to": {
+        "kind": "IOS_SYMBOL",
+        "locator": "radiusButton"
+      }
+    },
+    {
+      "id": "edge-figma-variant-code-prop",
+      "relation": "IMPLEMENTED_BY",
+      "from": {
+        "kind": "FIGMA_PROPERTY",
+        "locator": "Variant=Primary"
+      },
+      "to": {
+        "kind": "CODE_PROPERTY",
+        "locator": "ButtonProps.variant=primary"
+      }
+    },
+    {
+      "id": "edge-figma-disabled-code-prop",
+      "relation": "IMPLEMENTED_BY",
+      "from": {
+        "kind": "FIGMA_PROPERTY",
+        "locator": "Disabled=true"
+      },
+      "to": {
+        "kind": "CODE_PROPERTY",
+        "locator": "ButtonProps.disabled=true"
+      }
+    },
+    {
+      "id": "edge-variant-prop-button",
+      "relation": "MEMBER_OF",
+      "from": {
+        "kind": "CODE_PROPERTY",
+        "locator": "ButtonProps.variant=primary"
+      },
+      "to": {
+        "kind": "CODE_SYMBOL",
+        "locator": "Button"
+      }
+    },
+    {
+      "id": "edge-disabled-prop-button",
+      "relation": "MEMBER_OF",
+      "from": {
+        "kind": "CODE_PROPERTY",
+        "locator": "ButtonProps.disabled=true"
+      },
+      "to": {
+        "kind": "CODE_SYMBOL",
+        "locator": "Button"
+      }
+    },
+    {
+      "id": "edge-action-css-button-use",
+      "relation": "USED_BY",
+      "from": {
+        "kind": "CSS_SYMBOL",
+        "locator": "--color-action"
+      },
+      "to": {
+        "kind": "CODE_USE",
+        "locator": "Button.background"
+      }
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+name: Read-only design evidence
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact subject
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind exact subject identity
+        id: identity
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha=$(git rev-parse HEAD)
+          test "$actual_sha" = "$EXPECTED_SHA"
+          printf 'sha=%s\n' "$actual_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Reject core source coupling
+        run: |
+          set -euo pipefail
+          if find . -type f \( -name '*.go' -o -name 'go.mod' \) -print0 \
+            | xargs -0 -r grep -En 'meta-ontology-go/(internal|cmd)|replace .*meta-ontology-go'; then
+            echo 'core source coupling is forbidden' >&2
+            exit 1
+          fi
+
+      - name: Evaluate released-CLI design evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          scripts/evaluate.sh "$RUNNER_TEMP/design-evidence"
+
+      - name: Publish exact human-readable indicators
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/design-evidence/report.json"
+          {
+            echo '## Gooo design evidence'
+            echo
+            jq -r '"- Decision: `\(.decision) / \(.resolution)`"' "$report"
+            jq -r '"- Closure: **\(.summary.closed)/\(.summary.total)**"' "$report"
+            jq -r '"- UNKNOWN: **\(.summary.unknown)/\(.summary.total)**"' "$report"
+            jq -r '"- REFUTED: **\(.summary.refuted)/\(.summary.total)**"' "$report"
+            jq -r '"- Repository writes: **\(.summary.repository_writes)**"' "$report"
+            jq -r '.proofs[] | "- `\(.choice)`: **\(.closed)/\(.total)**"' "$report"
+            jq -r '.indicators[] | "- `\(.id)`: **\(.value)/\(.total)** (`\(.state)`)"' "$report"
+            jq -r '"- Report digest: `\(.report_digest)`"' "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deterministic evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: design-evidence-${{ steps.identity.outputs.sha }}
+          path: ${{ runner.temp }}/design-evidence
+          if-no-files-found: error
+          retention-days: 30
