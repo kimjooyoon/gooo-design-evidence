@@ -10,6 +10,23 @@ digest-locked `v0.1.0-dev` executable and consumes only `version --json`,
 syntax `check --json`, explicit `check --semantic --json`, and `graph dump`
 receipts.
 
+## Released-domain envelope v2 adoption candidate
+
+The product-owned candidate in `examples/released-domain-envelope-v2/` binds
+exactly twelve Gooo activities to the released-domain envelope v2 denominator.
+Its PR workflow downloads the immutable v0.3.0-dev consumer kit by asset ID and
+digest, projects the released Design Evidence v0.7.0-dev packet into eight
+files, and runs the kit's read-only conformer. The candidate reports
+product-owned projection 1/1, envelope files 8/8, relations/evidence/
+resolutions 4/4/4, conformer checks 10/10, and deterministic replay 1/1.
+
+Released adoption and external utility remain 0/1 UNKNOWN until a product
+release and independent user evidence exist. The workflow has zero repository
+writes, local test executions, and cross-project required gates; generated
+output is caller-owned temporary output only. See
+`docs/rfcs/released-domain-envelope-adoption-v2.md` for the boundary and
+`contracts/released-domain-envelope-denominator-v2.json` for the fixed cells.
+
 ## First vertical slice
 
 The synthetic `Button` fixture contains:

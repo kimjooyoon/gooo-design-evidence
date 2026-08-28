@@ -1,0 +1,61 @@
+{
+  "schema": "gooo/design-evidence/released-domain-envelope-adoption-release-lock/v2",
+  "core": {
+    "repository": "kimjooyoon/meta-ontology-go",
+    "tag": "v0.4.0-dev",
+    "ref_object_type": "commit",
+    "ref_object_sha": "57ac9ec486bbca69e447a8eba94e0ce3cd03ced0",
+    "target_commit_sha": "57ac9ec486bbca69e447a8eba94e0ce3cd03ced0",
+    "asset": {
+      "id": 533959499,
+      "name": "gooo-linux-amd64.tar.gz",
+      "size": 7057764,
+      "sha256": "3f6f34156dc959c4ae80711ff55cfbd135023fd57df673d28247e1894bf42f48"
+    },
+    "resolution_schema": "gooo/activity-cardinality-resolution/v1"
+  },
+  "specification": {
+    "repository": "kimjooyoon/gooo-interchange-spec",
+    "tag": "v0.3.0-dev",
+    "ref_object_type": "commit",
+    "ref_object_sha": "ad3b1f4afca3cc3a8dba662804360e3fffd4aefb",
+    "target_commit_sha": "ad3b1f4afca3cc3a8dba662804360e3fffd4aefb",
+    "consumer_kit": {
+      "id": 534100046,
+      "name": "gooo-interchange-consumer-kit-v2.tar.gz",
+      "size": 7230,
+      "sha256": "a87fff90f4c80a9f8634275c7bc7c7bf2c42e5ccee7e4a686c8cff4efb33233c"
+    }
+  },
+  "design_evidence": {
+    "repository": "kimjooyoon/gooo-design-evidence",
+    "tag": "v0.7.0-dev",
+    "ref_object_type": "commit",
+    "ref_object_sha": "1a0ef8ebd79d0fb7b3185d5126ca1098b7e24d37",
+    "target_commit_sha": "1a0ef8ebd79d0fb7b3185d5126ca1098b7e24d37",
+    "source_asset": {
+      "id": 533839879,
+      "name": "design-review-packet-1a0ef8ebd79d0fb7b3185d5126ca1098b7e24d37.zip",
+      "size": 37458,
+      "sha256": "dd79c754f7fc2a5326ddae0c1a141a8afc7deef8f6e7cf5d07aa9a5158054706",
+      "member": "design-review-packet.json"
+    },
+    "replay_asset": {
+      "member": "review-decision-replay.json"
+    },
+    "source_schema": "gooo/design-evidence/review-packet/v1",
+    "relation_array": "relation_dispositions",
+    "expected_relations": 4,
+    "expected_claim_tuples": 4,
+    "replay_comparisons": 5
+  },
+  "policy": {
+    "cross_project_required_gates": 0,
+    "repository_writes": 0,
+    "local_test_executions": 0,
+    "product_generation_authorized": false,
+    "root_readme_readiness": "EXCLUDED",
+    "released_adoption": {"observed": 0, "total": 1, "state": "UNKNOWN"},
+    "external_utility": {"observed": 0, "total": 1, "state": "UNKNOWN"}
+  }
+}
