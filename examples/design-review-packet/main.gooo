@@ -24,7 +24,7 @@ activity ProjectRelationDispositions(ReleasedMatcherEvidence) -> RelationDisposi
 activity ProjectClaimTupleLedger(ReleasedClaimReceipts) -> ClaimTupleLedger
 activity GenerateMachineReviewPacket(RelationDispositionPlan) -> MachineReviewPacket
 activity GenerateHumanReviewPacket(ClaimTupleLedger) -> HumanReviewPacket
-activity ResolveReviewReadyClaim(MachineReviewPacket) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=DESIGN_RELEASE_REVIEW_PACKET_GENERATED;unknown_class=NONE;next_operation=PUBLISH_IMMUTABLE_DESIGN_REVIEW_PACKET_RELEASE"
+activity ResolveReviewReadyClaim(MachineReviewPacket) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=DESIGN_RELEASE_REVIEW_PACKET_GENERATED;unknown_class=NONE;next_operation=NONE"
 activity PreserveMissingMatcherUnknown(ReviewFailure) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=UNKNOWN;stage=RELEASE_EVIDENCE;step=OBSERVE_RELEASED_MATCHER_EVIDENCE;reason=MATCHER_RELEASE_REPORT_UNAVAILABLE;unknown_class=DIRECT_MISSING;next_operation=RESTORE_MATCHER_RELEASE_REPORT"
 activity RefuteClaimTupleMismatch(ReviewFailure) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=REFUTED;stage=CLAIM_COMPARISON;step=PROJECT_CLAIM_TUPLE_LEDGER;reason=RELEASED_CLAIM_TUPLE_MISMATCH;unknown_class=NONE;next_operation=RESTORE_RELEASED_CLAIM_TUPLES"
 activity RefuteUnreviewedMismatch(ReviewFailure) -> ClaimResolutionPrimitive computes "claim.resolve:v1;state=REFUTED;stage=RELATION_POLICY;step=PROJECT_RELATION_DISPOSITIONS;reason=UNREVIEWED_DESIGN_MISMATCH;unknown_class=NONE;next_operation=REVIEW_OR_REPAIR_DESIGN_MISMATCH"
