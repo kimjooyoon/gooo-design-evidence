@@ -27,24 +27,26 @@ jq -S -n --slurpfile denominator "$denominator" --slurpfile core "$core_receipts
       {state:"UNKNOWN",stage:"RESOLUTION",step:"RESOLVE_ACTIVITY_CARDINALITY",reason:"CORE_ACTIVITY_RESOLUTION_RECEIPT_UNAVAILABLE",unknown_class:"DIRECT_MISSING",next_operation:"PROVIDE_CORE_ACTIVITY_RESOLUTION_RECEIPT",blocked_by:[]}
     elif $r.decision=="CLOSED" and $r.occurrences==1 and $r.claim.state=="CLOSED" and $r.claim.reason=="ACTIVITY_UNIQUELY_RESOLVED" then
       {state:"CLOSED",stage:null,step:null,reason:"ACTIVITY_UNIQUELY_RESOLVED",unknown_class:null,next_operation:"NONE",blocked_by:[]}
-    elif $r.decision=="UNKNOWN" then
-      {state:"UNKNOWN",stage:"RESOLUTION",step:"RESOLVE_ACTIVITY_CARDINALITY",reason:($r.claim.reason//"CORE_ACTIVITY_RESOLUTION_UNKNOWN"),unknown_class:($r.claim.unknown_class//"DIRECT_MISSING"),next_operation:($r.claim.next_operation//"RESOLVE_CORE_ACTIVITY"),blocked_by:[]}
+    elif $r.decision=="UNKNOWN" and $r.claim.state=="UNKNOWN" and (($r.occurrences|type)=="number") and $r.occurrences==0 and $r.claim.reason=="ACTIVITY_NOT_FOUND" then
+      {state:"UNKNOWN",stage:"RESOLUTION",step:"RESOLVE_ACTIVITY_CARDINALITY",reason:"ACTIVITY_NOT_FOUND",unknown_class:"DIRECT_MISSING",next_operation:"PROVIDE_UNIQUE_ACTIVITY_BINDING",blocked_by:[]}
+    elif $r.decision=="REFUTED" and $r.claim.state=="REFUTED" and (($r.occurrences|type)=="number") and $r.occurrences>1 and $r.claim.reason=="AMBIGUOUS_ACTIVITY_BINDING" then
+      {state:"REFUTED",stage:"RESOLUTION",step:"RESOLVE_ACTIVITY_CARDINALITY",reason:"AMBIGUOUS_ACTIVITY_BINDING",unknown_class:null,next_operation:"RESTORE_UNIQUE_ACTIVITY_BINDING",blocked_by:[]}
     else
       {state:"REFUTED",stage:"RESOLUTION",step:"RESOLVE_ACTIVITY_CARDINALITY",reason:"UNRECOGNIZED_CORE_ACTIVITY_RESOLUTION_DECISION",unknown_class:null,next_operation:"RESTORE_CORE_ACTIVITY_RESOLUTION_RECEIPT",blocked_by:[]}
     end;
   def fact($id):
-    if $id=="CORE_RELEASE" then $f.release_observations.core
-    elif $id=="LOCAL_RELEASE" then $f.release_observations.local
-    elif $id=="DESIGN_RELEASE" then $f.release_observations.design
-    elif $id=="INFRA_RELEASE" then $f.release_observations.infra
-    elif $id=="DOMAIN_RELATION" then $f.projection.relations.observed==$f.projection.relations.total
-    elif $id=="EVIDENCE_ANCHOR" then $f.projection.evidence.observed==$f.projection.evidence.total
-    elif $id=="CLAIM_RESOLUTION" then $f.projection.resolutions.observed==$f.projection.resolutions.total
+    if $id=="CORE_RELEASE" then $f.observations.core_release
+    elif $id=="SPEC_RELEASE" then $f.observations.spec_release
+    elif $id=="DESIGN_RELEASE" then $f.observations.design_release
+    elif $id=="META_ACTIVITY_AUTHORITY" then $f.observations.meta_activity_authority
+    elif $id=="CLAIM_DISPOSITION_SOURCE" then ($f.source.claim_disposition_tuples.observed==$f.source.claim_disposition_tuples.total and $f.source.relation_dispositions.observed==$f.source.relation_dispositions.total)
+    elif $id=="PRODUCT_PROJECTION" then ($f.projection.product_owned_projection.observed==$f.projection.product_owned_projection.total and $f.projection.relations.observed==$f.projection.relations.total and $f.projection.evidence.observed==$f.projection.evidence.total and $f.projection.resolutions.observed==$f.projection.resolutions.total)
     elif $id=="EIGHT_FILE_ENVELOPE" then $f.projection.envelope_files.observed==$f.projection.envelope_files.total
-    elif $id=="UNKNOWN_COORDINATES" then ($f.unknown_cases.valid.observed==$f.unknown_cases.valid.total and $f.unknown_cases.coordinate_fields==6 and $f.unknown_cases.classes.direct_missing==1 and $f.unknown_cases.classes.dependency_blocked==1)
+    elif $id=="READ_ONLY_CONFORMANCE" then ($f.projection.conformer_checks.observed==$f.projection.conformer_checks.total and $f.projection.conformer_decision=="CONFORMANT")
+    elif $id=="UNKNOWN_CAUSALITY" then ($f.unknown_cases.valid.observed==$f.unknown_cases.valid.total and $f.unknown_cases.coordinate_fields_observed==$f.unknown_cases.coordinate_fields_total and $f.unknown_cases.classes.direct_missing.observed==$f.unknown_cases.classes.direct_missing.total and $f.unknown_cases.classes.dependency_blocked.observed==$f.unknown_cases.classes.dependency_blocked.total)
     elif $id=="DETERMINISTIC_REPLAY" then $f.projection.deterministic_replay.observed==$f.projection.deterministic_replay.total
-    elif $id=="INVALID_ENVELOPE_REFUTATION" then ($f.refuted_cases.observed==$f.refuted_cases.total and $f.refuted_cases.all_fail_closed==true)
-    elif $id=="READ_ONLY_AUTHORITY" then ($f.runtime.repository.writes==0 and $f.runtime.local_test_executions==0 and $f.runtime.cross_project_required_gates==0 and $f.runtime.product_generation_authorized==false)
+    elif $id=="REFUTED_COUNTEREXAMPLES" then ($f.refuted_cases.observed==$f.refuted_cases.total and $f.refuted_cases.all_fail_closed==true)
+    elif $id=="AUTHORITY_BOUNDARY" then ($f.runtime.repository.writes==0 and $f.runtime.local_test_executions==0 and $f.runtime.cross_project_required_gates==0 and $f.runtime.product_generation_authorized==false)
     else null end;
   (reduce $d.cells[] as $cell ([ ];
     . as $prior | (normalized_core($cell)) as $cr |
@@ -80,7 +82,7 @@ jq -S -n --slurpfile denominator "$denominator" --slurpfile core "$core_receipts
    adoption:$f.adoption,
    improvement:$f.improvement,
    authority:{cross_project_required_gates:$f.runtime.cross_project_required_gates,root_readme_readiness:"EXCLUDED",automatic_merge_authorized:false,repository_writes:$f.runtime.repository.writes,product_generation_authorized:$f.runtime.product_generation_authorized},
-   source:{claim_tuples:$f.source.claim_disposition_tuples,known_contradiction:$f.source.known_contradiction,unknown_coordinate_fields:$f.unknown_cases.coordinate_fields,resolution_precedence:["REFUTED","UNKNOWN","CLOSED"]},
+   source:{claim_tuples:$f.source.claim_disposition_tuples,known_contradiction:$f.source.known_contradiction,unknown_coordinate_fields:{observed:$f.unknown_cases.coordinate_fields_observed,total:$f.unknown_cases.coordinate_fields_total},resolution_precedence:["REFUTED","UNKNOWN","CLOSED"]},
    proofs:( ["FOUNDATION","COHERENCE","REGRESSION"] | map(. as $choice|{choice:$choice,closed:([$cells[]|select(.proof_choice==$choice and .state=="CLOSED")]|length),total:([$cells[]|select(.proof_choice==$choice)]|length)}) ),
    indicator_classes:( ["DRIVER","OUTCOME","GUARDRAIL"] | map(. as $class|{class:$class,closed:([$cells[]|select(.indicator_class==$class and .state=="CLOSED")]|length),total:([$cells[]|select(.indicator_class==$class)]|length)}) ),
    cells:$cells,

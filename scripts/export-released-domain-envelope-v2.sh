@@ -28,7 +28,7 @@ for file in "$lock" "$denominator" "$fixture" "$core_receipts" "$source_file" "$
 done
 
 test "$(jq -r .schema "$lock")" = "gooo/design-evidence/released-domain-envelope-adoption-release-lock/v2"
-test "$(jq -r .schema "$denominator")" = "gooo/interchange/released-domain-envelope-denominator/v2"
+test "$(jq -r .schema "$denominator")" = "gooo/design-evidence/released-domain-envelope-adoption-denominator/v2"
 test "$(jq -r .schema "$fixture")" = "gooo/design-evidence/released-domain-envelope-adoption/v2"
 
 jq -n -e --slurpfile denominator "$denominator" --slurpfile receipts "$core_receipts" '
@@ -153,6 +153,7 @@ jq -S -n --arg project_id "$project_id" --arg domain "$domain" \
   --arg asset "$source_asset" --arg asset_sha "$source_sha" --arg member "$source_member" --arg source_schema "$source_schema" \
   --argjson relation_count "$relation_count" --argjson evidence_count "$evidence_count" \
   --argjson resolution_count "$resolution_count" --argjson unknown_count "$unknown_count" \
+  --argjson claim_tuples_total "$expected_claim_tuples" \
   --argjson claim_tuples "$claim_tuples" --argjson meta_activities "$(jq '.target_cells' "$denominator")" \
   '{schema:"gooo/interchange/project/v2",project_id:$project_id,domain:$domain,
     release:{repository:$repository,tag:$tag,target_commit_sha:$target},
@@ -160,7 +161,7 @@ jq -S -n --arg project_id "$project_id" --arg domain "$domain" \
     relation_count:$relation_count,evidence_count:$evidence_count,resolution_count:$resolution_count,
     unknown_count:$unknown_count,
     projection:{owner:"DESIGN_EVIDENCE",generator:"PRODUCT_OWNED_GOOO_ACTIVITY_PROJECTION",
-      meta_activity_receipts:$meta_activities,claim_tuples_observed:($claim_tuples|length),claim_tuples_total:4,
+      meta_activity_receipts:$meta_activities,claim_tuples_observed:($claim_tuples|length),claim_tuples_total:$claim_tuples_total,
       resolution_precedence:["REFUTED","UNKNOWN","CLOSED"]},
     claim_tuples:$claim_tuples,
     authority:{projection_owner:"INTERCHANGE_SPECIFICATION",domain_release_adoption_claimed:false,

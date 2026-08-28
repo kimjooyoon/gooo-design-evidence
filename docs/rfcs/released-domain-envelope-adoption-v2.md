@@ -15,16 +15,23 @@ The eight-file output is written only to caller-owned temporary output.
 
 ## Fixed denominator
 
-The product keeps exactly twelve cells and twelve one-to-one Gooo activities:
+The product keeps exactly twelve cells and twelve one-to-one Design Evidence
+Gooo activities:
 
-- FOUNDATION: four release identity observations.
-- COHERENCE: domain relation, evidence anchor, claim resolution, and the
-  eight-file envelope.
-- REGRESSION: six-coordinate UNKNOWN preservation, replay, invalid-envelope
-  refutation, and read-only authority.
+- FOUNDATION: `CORE_RELEASE`, `SPEC_RELEASE`, `DESIGN_RELEASE`, and
+  `META_ACTIVITY_AUTHORITY`.
+- COHERENCE: `CLAIM_DISPOSITION_SOURCE`, `PRODUCT_PROJECTION`,
+  `EIGHT_FILE_ENVELOPE`, and `READ_ONLY_CONFORMANCE`.
+- REGRESSION: `UNKNOWN_CAUSALITY`, `DETERMINISTIC_REPLAY`,
+  `REFUTED_COUNTEREXAMPLES`, and `AUTHORITY_BOUNDARY`.
 
-Each class is 4/4. DRIVER, OUTCOME, and GUARDRAIL are also 4/4. A dependency
-failure is represented as `DEPENDENCY_BLOCKED` with a stable `blocked_by`
+The generic denominator shipped inside the immutable consumer kit is observed
+only by that kit's conformer; it is not copied into or used as this product's
+denominator. The product denominator's `DRIVER`, `OUTCOME`, and `GUARDRAIL`
+indicator classes are four cells each.
+
+Each proof class is 4/4. A dependency failure is represented as
+`DEPENDENCY_BLOCKED` with a stable `blocked_by`
 frontier; a directly missing fact is `DIRECT_MISSING` with an empty frontier.
 Each UNKNOWN retains `stage`, `step`, `reason`, `unknown_class`,
 `next_operation`, and `blocked_by`. A known contradiction is `REFUTED` and

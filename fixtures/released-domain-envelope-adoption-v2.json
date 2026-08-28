@@ -16,6 +16,15 @@
     "replay_total_path": ["receipts_total"],
     "expected_replay_comparisons": 5
   },
+  "artifact_contract": {
+    "inputs": {"release_assets": 3, "repository_inputs": 3, "total": 6},
+    "outputs": {"envelope_files": 8, "total": 8},
+    "normal_cases": 1,
+    "unknown_cases": 2,
+    "unknown_coordinate_fields": 6,
+    "unknown_classes": {"direct_missing": 1, "dependency_blocked": 1},
+    "refuted_cases": 5
+  },
   "authority": {
     "generator": "PRODUCT_OWNED_GOOO_ACTIVITY_PROJECTION",
     "source_truth": "RELEASED_DESIGN_EVIDENCE_ONLY",

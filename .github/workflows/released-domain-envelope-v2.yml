@@ -18,6 +18,22 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Observe Go runtime
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+
+      - name: Record Go version and module-root observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          go_version=$(go version)
+          module_roots=$(find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type f -name go.mod -print | wc -l | tr -d ' ')
+          jq -S -n --arg go_version "$go_version" --argjson module_roots "$module_roots" \
+            '{schema:"gooo/design-evidence/go-runtime-observation/v2",go_version:$go_version,module_roots:$module_roots,go_fix_module_roots:0}' \
+            > "$RUNNER_TEMP/go-runtime-observation.json"
+
       - name: Bind candidate subject
         shell: bash
         run: |
@@ -82,7 +98,6 @@ jobs:
           kit_root="$RUNNER_TEMP/consumer-kit/consumer-kit-v2"
           (cd "$kit_root" && sha256sum -c SHA256SUMS)
           jq -e '.schema=="gooo/interchange/released-domain-consumer-kit-manifest/v2" and .kit_version=="v2" and .authority=={cross_project_required_gates:0,product_generation_authorized:false,read_only:true,repository_checkout_required:false} and .inventory.generators==0 and .inventory.conformers==1 and .inventory.schemas==6' "$kit_root/manifest.json" >/dev/null
-          cmp -s "$kit_root/contracts/released-domain-envelope-denominator-v2.json" contracts/released-domain-envelope-denominator-v2.json
           test ! -e "$kit_root/../gooo-interchange-spec"
 
           design_repo=$(jq -r .design_evidence.repository "$lock")
@@ -116,6 +131,7 @@ jobs:
           gooo="$RUNNER_TEMP/core/gooo"
           source=examples/released-domain-envelope-v2/main.gooo
           denominator=contracts/released-domain-envelope-denominator-v2.json
+          jq -e '. as $d | ($d.schema=="gooo/design-evidence/released-domain-envelope-adoption-denominator/v2") and ($d.target_cells==12) and (([$d.cells[].id]|sort)==["AUTHORITY_BOUNDARY","CLAIM_DISPOSITION_SOURCE","CORE_RELEASE","DESIGN_RELEASE","DETERMINISTIC_REPLAY","EIGHT_FILE_ENVELOPE","META_ACTIVITY_AUTHORITY","PRODUCT_PROJECTION","READ_ONLY_CONFORMANCE","REFUTED_COUNTEREXAMPLES","SPEC_RELEASE","UNKNOWN_CAUSALITY"]) and (([$d.cells[].activity]|unique|length)==12) and (all(["FOUNDATION","COHERENCE","REGRESSION"][]; . as $choice | ([$d.cells[]|select(.proof_choice==$choice)]|length)==4)) and (all(["DRIVER","OUTCOME","GUARDRAIL"][]; . as $class | ([$d.cells[]|select(.indicator_class==$class)]|length)==4))' "$denominator" >/dev/null
           "$gooo" check --json "$source" > "$RUNNER_TEMP/envelope-syntax.json"
           "$gooo" check --semantic --json "$source" > "$RUNNER_TEMP/envelope-semantic.json"
           "$gooo" graph dump "$source" > "$RUNNER_TEMP/envelope-graph.json"
@@ -138,6 +154,13 @@ jobs:
           fixture=fixtures/released-domain-envelope-adoption-v2.json
           exporter=scripts/export-released-domain-envelope-v2.sh
           conformer="$RUNNER_TEMP/consumer-kit/consumer-kit-v2/scripts/conform-released-envelope-v2.sh"
+          expected_envelope_files=$(jq -r .artifact_contract.outputs.envelope_files "$fixture")
+          expected_unknown_cases=$(jq -r .artifact_contract.unknown_cases "$fixture")
+          expected_unknown_coordinate_fields=$(jq -r .artifact_contract.unknown_coordinate_fields "$fixture")
+          expected_direct_missing=$(jq -r .artifact_contract.unknown_classes.direct_missing "$fixture")
+          expected_dependency_blocked=$(jq -r .artifact_contract.unknown_classes.dependency_blocked "$fixture")
+          expected_refuted_cases=$(jq -r .artifact_contract.refuted_cases "$fixture")
+          expected_claim_tuples=$(jq -r .source.expected_claim_tuples "$fixture")
           source_file=$(find "$RUNNER_TEMP/design-evidence" -type f -name "$(jq -r .design_evidence.source_asset.member "$lock")" -print -quit)
           replay_file=$(find "$RUNNER_TEMP/design-evidence" -type f -name "$(jq -r .design_evidence.replay_asset.member "$lock")" -print -quit)
           snapshot() {
@@ -150,12 +173,21 @@ jobs:
           echo $(( (end_ns-start_ns)/1000000 )) > "$RUNNER_TEMP/envelope-exporter-wall-ms"
           bash "$exporter" "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$lock" "$GITHUB_WORKSPACE/$denominator" "$GITHUB_WORKSPACE/$fixture" "$RUNNER_TEMP/envelope-core-receipts.json" "$source_file" "$replay_file" "$RUNNER_TEMP/envelope-b"
           bash "$conformer" "$RUNNER_TEMP/envelope-a" "$RUNNER_TEMP/envelope-b" "$RUNNER_TEMP/envelope-conformance.json"
-          jq -e '.decision=="CONFORMANT" and .summary=={closed:10,external_required_gates:0,files:8,evidence:4,relations:4,resolutions:4,total:10,unknown:0,unknowns:0,refuted:0}' "$RUNNER_TEMP/envelope-conformance.json" >/dev/null
+          envelope_file_count=$(find "$RUNNER_TEMP/envelope-a" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')
+          conformer_files=$(jq -r .summary.files "$RUNNER_TEMP/envelope-conformance.json")
+          conformer_checks_total=$(jq '.checks|length' "$RUNNER_TEMP/envelope-conformance.json")
+          conformer_checks_closed=$(jq '[.checks[]|select(.state=="CLOSED")]|length' "$RUNNER_TEMP/envelope-conformance.json")
+          deterministic_replay_closed=$(jq '[.checks[]|select(.id=="DETERMINISTIC_REPLAY" and .state=="CLOSED")]|length' "$RUNNER_TEMP/envelope-conformance.json")
+          test "$envelope_file_count" -eq "$expected_envelope_files"
+          test "$envelope_file_count" -eq "$conformer_files"
+          jq -e --argjson expected_files "$expected_envelope_files" --argjson expected_relations "$(jq -r .source.expected_relations "$fixture")" --argjson expected_checks "$conformer_checks_total" \
+            '.decision=="CONFORMANT" and .summary.files==$expected_files and .summary.relations==$expected_relations and .summary.evidence==$expected_relations and .summary.resolutions==$expected_relations and .summary.closed==$expected_checks and .summary.total==$expected_checks and .summary.unknown==0 and .summary.unknowns==0 and .summary.refuted==0' \
+            "$RUNNER_TEMP/envelope-conformance.json" >/dev/null
 
           cp -R "$RUNNER_TEMP/envelope-a" "$RUNNER_TEMP/envelope-valid-unknown-a"
           cp -R "$RUNNER_TEMP/envelope-a" "$RUNNER_TEMP/envelope-valid-unknown-b"
           for bundle in "$RUNNER_TEMP/envelope-valid-unknown-a" "$RUNNER_TEMP/envelope-valid-unknown-b"; do
-            jq '.unknown_count=2' "$bundle/project.json" > "$bundle/project.next"
+            jq --argjson unknown_cases "$expected_unknown_cases" '.unknown_count=$unknown_cases' "$bundle/project.json" > "$bundle/project.next"
             mv "$bundle/project.next" "$bundle/project.json"
             jq -cS 'if .relation_id=="action-token-used-by-button" then .state="UNKNOWN"|.stage="RELATION"|.step="RESOLVE_DESIGN_CODE_RELATION"|.reason="CODE_CONNECT_PROPERTY_UNAVAILABLE"|.unknown_class="DIRECT_MISSING"|.next_operation="PROVIDE_CODE_CONNECT_PROPERTY"|.blocked_by=[] elif .relation_id=="figma-disabled-implemented-by-code" then .state="UNKNOWN"|.stage="RELATION"|.step="RESOLVE_DESIGN_CODE_RELATION"|.reason="DEPENDENCY_EVIDENCE_UNAVAILABLE"|.unknown_class="DEPENDENCY_BLOCKED"|.next_operation="RESOLVE_DEPENDENCY_FRONTIER"|.blocked_by=["action-token-used-by-button"] else . end' "$bundle/resolutions.ndjson" > "$bundle/resolutions.next"
             mv "$bundle/resolutions.next" "$bundle/resolutions.ndjson"
@@ -166,7 +198,13 @@ jobs:
             (cd "$bundle" && sha256sum project.json evidence.ndjson relations.ndjson resolutions.ndjson unknowns.ndjson conformance.json replay.json > checksums.txt)
           done
           bash "$conformer" "$RUNNER_TEMP/envelope-valid-unknown-a" "$RUNNER_TEMP/envelope-valid-unknown-b" "$RUNNER_TEMP/envelope-unknown-conformance.json"
-          jq -e '.decision=="CONFORMANT" and .summary.files==8 and .summary.relations==4 and .summary.evidence==4 and .summary.resolutions==4 and .summary.unknowns==2' "$RUNNER_TEMP/envelope-unknown-conformance.json" >/dev/null
+          unknown_record_count=$(jq -s 'length' "$RUNNER_TEMP/envelope-valid-unknown-a/unknowns.ndjson")
+          unknown_coordinate_fields=$(jq -s 'if length==0 then 0 elif all(.[]; has("stage") and has("step") and has("reason") and has("unknown_class") and has("next_operation") and has("blocked_by") and (.blocked_by|type)=="array") then 6 else ([.[] | [has("stage"),has("step"),has("reason"),has("unknown_class"),has("next_operation"),has("blocked_by")] | map(select(.==true)) | length] | min) end' "$RUNNER_TEMP/envelope-valid-unknown-a/unknowns.ndjson")
+          unknown_direct_missing=$(jq -s '[.[]|select(.unknown_class=="DIRECT_MISSING")]|length' "$RUNNER_TEMP/envelope-valid-unknown-a/unknowns.ndjson")
+          unknown_dependency_blocked=$(jq -s '[.[]|select(.unknown_class=="DEPENDENCY_BLOCKED")]|length' "$RUNNER_TEMP/envelope-valid-unknown-a/unknowns.ndjson")
+          jq -e --argjson expected_files "$expected_envelope_files" --argjson expected_relations "$(jq -r .source.expected_relations "$fixture")" --argjson expected_unknowns "$expected_unknown_cases" \
+            '.decision=="CONFORMANT" and .summary.files==$expected_files and .summary.relations==$expected_relations and .summary.evidence==$expected_relations and .summary.resolutions==$expected_relations and .summary.unknowns==$expected_unknowns' \
+            "$RUNNER_TEMP/envelope-unknown-conformance.json" >/dev/null
 
           cp -R "$RUNNER_TEMP/envelope-a" "$RUNNER_TEMP/envelope-counterexample-01"
           : > "$RUNNER_TEMP/envelope-counterexample-01/extra.txt"
@@ -193,6 +231,55 @@ jobs:
           for counterexample in 01 02 03 04 05; do
             jq -e '.decision=="FAIL_CLOSED" and .summary.refuted>=1' "$RUNNER_TEMP/envelope-counterexample-$counterexample.json" >/dev/null
           done
+          refuted_report_count=0
+          refuted_fail_closed_count=0
+          for report in "$RUNNER_TEMP"/envelope-counterexample-*.json; do
+            test -f "$report" || continue
+            refuted_report_count=$((refuted_report_count+1))
+            if jq -e '.decision=="FAIL_CLOSED"' "$report" >/dev/null; then
+              refuted_fail_closed_count=$((refuted_fail_closed_count+1))
+            fi
+          done
+          test "$refuted_report_count" -eq "$expected_refuted_cases"
+          test "$refuted_fail_closed_count" -eq "$refuted_report_count"
+
+          actual_relations=$(wc -l < "$RUNNER_TEMP/envelope-a/relations.ndjson" | tr -d ' ')
+          actual_evidence=$(wc -l < "$RUNNER_TEMP/envelope-a/evidence.ndjson" | tr -d ' ')
+          actual_resolutions=$(wc -l < "$RUNNER_TEMP/envelope-a/resolutions.ndjson" | tr -d ' ')
+          source_relations=$(jq --arg key "$(jq -r .source.relation_array "$fixture")" '.[$key]|length' "$source_file")
+          source_claims=$(jq '.claim_tuples|length' "$source_file")
+          project_owner=$(jq -r .projection.owner "$RUNNER_TEMP/envelope-a/project.json")
+          product_projection_observed=0
+          if test "$project_owner" = "DESIGN_EVIDENCE" && test -d "$RUNNER_TEMP/envelope-a"; then
+            product_projection_observed=1
+          fi
+          core_release_observed=$(jq -r 'if .core.identity_verified==true then true else false end' "$RUNNER_TEMP/immutable-inputs.json")
+          spec_release_observed=$(jq -r 'if .specification.identity_verified==true then true else false end' "$RUNNER_TEMP/immutable-inputs.json")
+          design_release_observed=$(jq -r 'if .design_evidence.identity_verified==true then true else false end' "$RUNNER_TEMP/immutable-inputs.json")
+          meta_activity_authority_observed=$(jq -n --slurpfile graph "$RUNNER_TEMP/envelope-graph.json" --slurpfile denominator "$GITHUB_WORKSPACE/$denominator" --slurpfile receipts "$RUNNER_TEMP/envelope-core-receipts.json" '
+            if ([$graph[0].nodes[]|select(.kind=="Activity")|.name]|sort) == ([$denominator[0].cells[].activity]|sort)
+               and ([$graph[0].nodes[]|select(.kind=="Activity")|.name]|unique|length)==12
+               and ($receipts[0]|length)==12
+               and all($receipts[0][]; .decision=="CLOSED" and .occurrences==1 and .claim.state=="CLOSED")
+            then true else false end')
+          release_assets_observed=0
+          for asset in "$(jq -r .core.asset.name "$lock")" "$(jq -r .specification.consumer_kit.name "$lock")" "$(jq -r .design_evidence.source_asset.name "$lock")"; do
+            if test -f "$RUNNER_TEMP/$asset"; then
+              release_assets_observed=$((release_assets_observed+1))
+            fi
+          done
+          repository_inputs_observed=0
+          for input in "$lock" "$denominator" "$fixture"; do
+            if test -f "$GITHUB_WORKSPACE/$input"; then
+              repository_inputs_observed=$((repository_inputs_observed+1))
+            fi
+          done
+          input_artifacts_observed=$((release_assets_observed+repository_inputs_observed))
+          conformer_decision=$(jq -r .decision "$RUNNER_TEMP/envelope-conformance.json")
+          normal_case_observed=0
+          if test "$conformer_decision" = "CONFORMANT" && test "$(jq -r .summary.unknown "$RUNNER_TEMP/envelope-conformance.json")" -eq 0 && test "$(jq -r .summary.refuted "$RUNNER_TEMP/envelope-conformance.json")" -eq 0; then
+            normal_case_observed=1
+          fi
 
           after=$(snapshot)
           if test "$before" = "$after"; then writes=0; else writes=1; fi
@@ -208,13 +295,32 @@ jobs:
             --argjson writes "$writes" --argjson peak_rss_kib "$(cat "$RUNNER_TEMP/envelope-exporter-rss")" --argjson wall_ms "$(cat "$RUNNER_TEMP/envelope-exporter-wall-ms")" \
             --argjson go_files "$go_files" --argjson go_lines "$go_lines" --argjson gooo_files "$gooo_files" --argjson gooo_lines "$gooo_lines" \
             --argjson descendant_directories "$descendant_directories" --argjson general_files "$general_files" --argjson physical_lines "$physical_lines" \
-            '{schema:"gooo/design-evidence/released-domain-envelope-runtime/v2",subject_sha:$subject_sha,repository:{before_digest:$before,after_digest:$after,writes:$writes},local_test_executions:0,cross_project_required_gates:0,product_generation_authorized:false,exporter:{peak_rss_kib:$peak_rss_kib,wall_ms:$wall_ms,output_owner:"CALLER_OWNED_TEMP"},inventory:{root_readme_excluded:true,go:{files:$go_files,physical_lines:$go_lines},gooo:{files:$gooo_files,physical_lines:$gooo_lines},descendant_directories:$descendant_directories,general_files:$general_files,physical_lines:$physical_lines}}' > "$RUNNER_TEMP/envelope-runtime.json"
+            --slurpfile go_observation "$RUNNER_TEMP/go-runtime-observation.json" \
+            '{schema:"gooo/design-evidence/released-domain-envelope-runtime/v2",subject_sha:$subject_sha,repository:{before_digest:$before,after_digest:$after,writes:$writes},local_test_executions:0,cross_project_required_gates:0,product_generation_authorized:false,go_version:$go_observation[0].go_version,module_roots:$go_observation[0].module_roots,go_fix_module_roots:$go_observation[0].go_fix_module_roots,exporter:{peak_rss_kib:$peak_rss_kib,wall_ms:$wall_ms,output_owner:"CALLER_OWNED_TEMP"},inventory:{root_readme_excluded:true,go:{files:$go_files,physical_lines:$go_lines},gooo:{files:$gooo_files,physical_lines:$gooo_lines},descendant_directories:$descendant_directories,general_files:$general_files,physical_lines:$physical_lines}}' > "$RUNNER_TEMP/envelope-runtime.json"
 
           adoption_json=$(jq -c .adoption "$fixture")
           improvement_json=$(jq -c .improvement "$fixture")
           jq -S -n --slurpfile project "$RUNNER_TEMP/envelope-a/project.json" --slurpfile source "$source_file" --slurpfile conformance "$RUNNER_TEMP/envelope-conformance.json" --slurpfile runtime "$RUNNER_TEMP/envelope-runtime.json" \
             --argjson adoption "$adoption_json" --argjson improvement "$improvement_json" \
-            '{schema:"gooo/design-evidence/released-domain-envelope-facts/v2",projection:{product_owned_projection:{observed:(if $project[0].projection.owner=="DESIGN_EVIDENCE" then 1 else 0 end),total:1},envelope_files:{observed:(if $project[0].authority.product_generation_authorized==false then 8 else 0 end),total:8},relations:{observed:$project[0].relation_count,total:4},evidence:{observed:$project[0].evidence_count,total:4},resolutions:{observed:$project[0].resolution_count,total:4},conformer_checks:{observed:$conformance[0].summary.closed,total:10},deterministic_replay:{observed:(if $conformance[0].decision=="CONFORMANT" then 1 else 0 end),total:1}},source:{claim_disposition_tuples:{observed:($source[0].claim_tuples|length),total:4},known_contradiction:{observed:(if any($source[0].claim_tuples[];.claim.state=="REFUTED") then 1 else 0 end),total:1,state:(if any($source[0].claim_tuples[];.claim.state=="REFUTED") then "REFUTED" else "UNKNOWN" end),precedence:"REFUTED_OVER_UNKNOWN"}},unknown_cases:{valid:{observed:2,total:2},coordinate_fields:6,classes:{direct_missing:1,dependency_blocked:1}},refuted_cases:{observed:5,total:5,minimum_cases:1,all_fail_closed:true},normal_cases:{observed:1,total:1,minimum_cases:1,state:"CLOSED"},artifacts:{inputs:{total:6,release_assets:3,repository_inputs:3},outputs:{total:8,envelope_files:8}},release_observations:{core:true,local:true,design:true,infra:true},adoption:$adoption,improvement:$improvement,runtime:$runtime[0]}' > "$RUNNER_TEMP/envelope-facts.json"
+            --argjson expected_envelope_files "$expected_envelope_files" --argjson expected_relations "$(jq -r .source.expected_relations "$fixture")" \
+            --argjson expected_unknown_cases "$expected_unknown_cases" --argjson expected_unknown_coordinate_fields "$expected_unknown_coordinate_fields" \
+            --argjson expected_direct_missing "$expected_direct_missing" --argjson expected_dependency_blocked "$expected_dependency_blocked" \
+            --argjson expected_refuted_cases "$expected_refuted_cases" --argjson expected_normal_cases "$(jq -r .artifact_contract.normal_cases "$fixture")" \
+            --argjson expected_input_assets "$(jq -r .artifact_contract.inputs.release_assets "$fixture")" --argjson expected_input_repo "$(jq -r .artifact_contract.inputs.repository_inputs "$fixture")" \
+            --argjson expected_input_total "$(jq -r .artifact_contract.inputs.total "$fixture")" --argjson product_projection_observed "$product_projection_observed" \
+            --argjson actual_relations "$actual_relations" --argjson actual_evidence "$actual_evidence" --argjson actual_resolutions "$actual_resolutions" \
+            --argjson source_relations "$source_relations" --argjson source_claims "$source_claims" --argjson expected_claim_tuples "$expected_claim_tuples" --argjson input_artifacts_observed "$input_artifacts_observed" \
+            --argjson release_assets_observed "$release_assets_observed" --argjson repository_inputs_observed "$repository_inputs_observed" \
+            --argjson unknown_record_count "$unknown_record_count" --argjson unknown_coordinate_fields "$unknown_coordinate_fields" \
+            --argjson unknown_direct_missing "$unknown_direct_missing" --argjson unknown_dependency_blocked "$unknown_dependency_blocked" \
+            --argjson refuted_report_count "$refuted_report_count" --argjson refuted_fail_closed_count "$refuted_fail_closed_count" \
+            --argjson normal_case_observed "$normal_case_observed" --argjson core_release_observed "$core_release_observed" \
+            --argjson spec_release_observed "$spec_release_observed" --argjson design_release_observed "$design_release_observed" \
+            --argjson meta_activity_authority_observed "$meta_activity_authority_observed" --argjson envelope_file_count "$envelope_file_count" \
+            --argjson conformer_files "$conformer_files" --argjson conformer_checks_total "$conformer_checks_total" \
+            --argjson conformer_checks_closed "$conformer_checks_closed" --argjson deterministic_replay_closed "$deterministic_replay_closed" \
+            --arg conformer_decision "$conformer_decision" \
+            '{schema:"gooo/design-evidence/released-domain-envelope-facts/v2",projection:{product_owned_projection:{observed:$product_projection_observed,total:1},envelope_files:{observed:$envelope_file_count,total:$expected_envelope_files,conformer_summary_files:$conformer_files},relations:{observed:$actual_relations,total:$expected_relations},evidence:{observed:$actual_evidence,total:$expected_relations},resolutions:{observed:$actual_resolutions,total:$expected_relations},conformer_checks:{observed:$conformer_checks_closed,total:$conformer_checks_total},conformer_decision:$conformer_decision,deterministic_replay:{observed:$deterministic_replay_closed,total:1}},source:{claim_disposition_tuples:{observed:$source_claims,total:$expected_claim_tuples},relation_dispositions:{observed:$source_relations,total:$expected_relations},known_contradiction:{observed:(if any($source[0].claim_tuples[];.claim.state=="REFUTED") then 1 else 0 end),total:1,state:(if any($source[0].claim_tuples[];.claim.state=="REFUTED") then "REFUTED" else "UNKNOWN" end),precedence:"REFUTED_OVER_UNKNOWN"}},unknown_cases:{valid:{observed:$unknown_record_count,total:$expected_unknown_cases},coordinate_fields_observed:$unknown_coordinate_fields,coordinate_fields_total:$expected_unknown_coordinate_fields,classes:{direct_missing:{observed:$unknown_direct_missing,total:$expected_direct_missing},dependency_blocked:{observed:$unknown_dependency_blocked,total:$expected_dependency_blocked}}},refuted_cases:{observed:$refuted_fail_closed_count,total:$expected_refuted_cases,report_count:$refuted_report_count,minimum_cases:$expected_refuted_cases,all_fail_closed:($refuted_report_count==$expected_refuted_cases and $refuted_fail_closed_count==$refuted_report_count)},normal_cases:{observed:$normal_case_observed,total:$expected_normal_cases,minimum_cases:$expected_normal_cases,state:"CLOSED"},artifacts:{inputs:{observed:$input_artifacts_observed,total:$expected_input_total,release_assets:{observed:$release_assets_observed,total:$expected_input_assets},repository_inputs:{observed:$repository_inputs_observed,total:$expected_input_repo}},outputs:{observed:$envelope_file_count,total:$expected_envelope_files,envelope_files:$envelope_file_count}},observations:{core_release:$core_release_observed,spec_release:$spec_release_observed,design_release:$design_release_observed,meta_activity_authority:$meta_activity_authority_observed},adoption:$adoption,improvement:$improvement,runtime:$runtime[0]}' > "$RUNNER_TEMP/envelope-facts.json"
 
           bash scripts/evaluate-released-domain-envelope-v2.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/envelope-core-receipts.json" "$RUNNER_TEMP/envelope-facts.json" "$RUNNER_TEMP/envelope-adoption-report.json" "$SUBJECT_SHA"
           jq -e '.decision=="ADOPTION_CANDIDATE_CONFORMANT" and .summary.total==12 and .summary.closed==12 and .summary.unknown==0 and .summary.refuted==0 and .summary.product_owned_projection=={observed:1,total:1} and .summary.envelope_files=={observed:8,total:8} and .summary.relations=={observed:4,total:4} and .summary.evidence=={observed:4,total:4} and .summary.resolutions=={observed:4,total:4} and .summary.conformer_checks=={observed:10,total:10} and .summary.deterministic_replay=={observed:1,total:1} and ([.proofs[]|select(.closed==4 and .total==4)]|length)==3 and ([.indicator_classes[]|select(.closed==4 and .total==4)]|length)==3 and .adoption.released.observed==0 and .adoption.released.total==1 and .adoption.released.state=="UNKNOWN" and .adoption.external_utility.observed==0 and .adoption.external_utility.total==1 and .adoption.external_utility.state=="UNKNOWN" and .improvement.state=="UNKNOWN" and .authority.cross_project_required_gates==0 and .authority.repository_writes==0 and .runtime.local_test_executions==0' "$RUNNER_TEMP/envelope-adoption-report.json" >/dev/null
@@ -222,6 +328,18 @@ jobs:
           jq '.[0].decision="FIXED_POINT"' "$RUNNER_TEMP/envelope-core-receipts.json" > "$RUNNER_TEMP/envelope-invalid-core-receipts.json"
           bash scripts/evaluate-released-domain-envelope-v2.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/envelope-invalid-core-receipts.json" "$RUNNER_TEMP/envelope-facts.json" "$RUNNER_TEMP/envelope-invalid-core-report.json" "$SUBJECT_SHA"
           jq -e '.decision=="FAIL_CLOSED" and .summary.closed==0 and .summary.refuted==12 and .claim.stage=="RESOLUTION" and .claim.step=="RESOLVE_ACTIVITY_CARDINALITY" and .claim.reason=="UNRECOGNIZED_CORE_ACTIVITY_RESOLUTION_DECISION"' "$RUNNER_TEMP/envelope-invalid-core-report.json" >/dev/null
+
+          jq '.[0] |= (.decision="UNKNOWN" | .occurrences=0 | .claim.state="UNKNOWN" | .claim.reason="ACTIVITY_NOT_FOUND")' "$RUNNER_TEMP/envelope-core-receipts.json" > "$RUNNER_TEMP/envelope-valid-unknown-core-receipts.json"
+          bash scripts/evaluate-released-domain-envelope-v2.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/envelope-valid-unknown-core-receipts.json" "$RUNNER_TEMP/envelope-facts.json" "$RUNNER_TEMP/envelope-valid-unknown-core-report.json" "$SUBJECT_SHA"
+          jq -e '.decision=="INCOMPLETE" and .summary.unknown>=1 and .summary.refuted==0 and .claim.state=="UNKNOWN" and .claim.reason=="ACTIVITY_NOT_FOUND" and .claim.unknown_class=="DIRECT_MISSING"' "$RUNNER_TEMP/envelope-valid-unknown-core-report.json" >/dev/null
+
+          jq '.[0] |= (.decision="REFUTED" | .occurrences=2 | .claim.state="REFUTED" | .claim.reason="AMBIGUOUS_ACTIVITY_BINDING")' "$RUNNER_TEMP/envelope-core-receipts.json" > "$RUNNER_TEMP/envelope-valid-refuted-core-receipts.json"
+          bash scripts/evaluate-released-domain-envelope-v2.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/envelope-valid-refuted-core-receipts.json" "$RUNNER_TEMP/envelope-facts.json" "$RUNNER_TEMP/envelope-valid-refuted-core-report.json" "$SUBJECT_SHA"
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed==0 and .summary.refuted==12 and .claim.state=="REFUTED" and .claim.reason=="AMBIGUOUS_ACTIVITY_BINDING"' "$RUNNER_TEMP/envelope-valid-refuted-core-report.json" >/dev/null
+
+          jq '.[0] |= (.decision="UNKNOWN" | .occurrences=1 | .claim.state="UNKNOWN" | .claim.reason="MALFORMED_UNKNOWN")' "$RUNNER_TEMP/envelope-core-receipts.json" > "$RUNNER_TEMP/envelope-malformed-unknown-core-receipts.json"
+          bash scripts/evaluate-released-domain-envelope-v2.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/envelope-malformed-unknown-core-receipts.json" "$RUNNER_TEMP/envelope-facts.json" "$RUNNER_TEMP/envelope-malformed-unknown-core-report.json" "$SUBJECT_SHA"
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed==0 and .summary.refuted==12 and .claim.reason=="UNRECOGNIZED_CORE_ACTIVITY_RESOLUTION_DECISION"' "$RUNNER_TEMP/envelope-malformed-unknown-core-report.json" >/dev/null
 
           {
             echo '## Released-domain envelope v2 adoption candidate'
@@ -239,6 +357,9 @@ jobs:
             ${{ runner.temp }}/envelope-b
             ${{ runner.temp }}/envelope-adoption-report.json
             ${{ runner.temp }}/envelope-invalid-core-report.json
+            ${{ runner.temp }}/envelope-valid-unknown-core-report.json
+            ${{ runner.temp }}/envelope-valid-refuted-core-report.json
+            ${{ runner.temp }}/envelope-malformed-unknown-core-report.json
             ${{ runner.temp }}/envelope-conformance.json
             ${{ runner.temp }}/envelope-unknown-conformance.json
             ${{ runner.temp }}/envelope-counterexample-*.json
