@@ -32,8 +32,11 @@ jobs:
       - name: Reject core source coupling
         run: |
           set -euo pipefail
-          if find . -type f \( -name '*.go' -o -name 'go.mod' \) -print0 \
-            | xargs -0 -r grep -En 'meta-ontology-go/(internal|cmd)|replace .*meta-ontology-go'; then
+          matches=$(find . -type f \( -name '*.go' -o -name 'go.mod' \) -print0 \
+            | xargs -0 -r grep -En 'meta-ontology-go/(internal|cmd)|replace .*meta-ontology-go' \
+            || true)
+          if [ -n "$matches" ]; then
+            printf '%s\n' "$matches"
             echo 'core source coupling is forbidden' >&2
             exit 1
           fi
