@@ -162,6 +162,9 @@ chmod +x "$gooo_binary"
 version_schema=$(jq -r '.schema_version' "$work/version.json")
 check_schema=$(jq -r '.schema_version' "$work/check.json")
 graph_schema=$(jq -r '.schema_version' "$work/graph.json")
+graph_source_digest=$(jq -r '.source_digest' "$work/graph.json")
+projection_sha256=$(digest_file "$projection")
+projection_hex=$(printf '%s' "$projection_sha256" | sed 's/^sha256://')
 version_status=$(jq -r '.status' "$work/version.json")
 check_status=$(jq -r '.status' "$work/check.json")
 expected_version_schema=$(jq -r '.runtime.version_schema' "$base_lock")
@@ -171,7 +174,7 @@ cli_state="CLOSED"
 if [ "$version_schema" != "$expected_version_schema" ] \
   || [ "$check_schema" != "$expected_check_schema" ] \
   || [ "$graph_schema" != "$expected_graph_schema" ] \
-  || [ "$(jq -r '.source_digest' "$work/graph.json")" != "$(digest_file "$projection")" ] \
+  || [ "$graph_source_digest" != "$projection_hex" ] \
   || [ "$check_status" != "ok" ] \
   || ! jq -e '.ir.status == "available" and (.ir.semantic_digest | length) > 0 and (.graph_hash | length) > 0' "$work/graph.json" >/dev/null; then
   cli_state="REFUTED"
@@ -349,15 +352,15 @@ build_report() {
   fi
 
   receipt_state="$cli_state"
-  local receipt_reason="RELEASED_CHECK_RECEIPTS_OBSERVED"
+  local receipt_reason="RELEASED_SEMANTIC_RECEIPTS_OBSERVED"
   local receipt_next="NONE"
   if [ "$release_state" != "CLOSED" ]; then
     receipt_state="UNKNOWN"
     receipt_reason="DEPENDENCY_BLOCKED_BY_RELEASE_IDENTITY"
     receipt_next="RESOLVE_GOOO_RELEASE_IDENTITY"
   elif [ "$receipt_state" != "CLOSED" ]; then
-    receipt_reason="RELEASED_CHECK_RECEIPT_MISMATCH"
-    receipt_next="RESTORE_RELEASED_CHECK_SCHEMA"
+    receipt_reason="RELEASED_SEMANTIC_RECEIPT_MISMATCH"
+    receipt_next="RESTORE_RELEASED_SEMANTIC_SCHEMAS"
   fi
 
   replay_state="CLOSED"
@@ -385,7 +388,7 @@ build_report() {
     "$source_state" \
     "$([ "$source_state" = CLOSED ] && echo DESIGN_SOURCE_BUNDLE_OBSERVED || echo DESIGN_SOURCE_BUNDLE_INVALID)" \
     "$([ "$source_state" = CLOSED ] && echo NONE || echo RESTORE_DESIGN_SOURCE_BUNDLE)" >> "$cells_file"
-  cell 4 RELEASED_CHECK_RECEIPT FOUNDATION ObserveReleasedCheckReceipt \
+  cell 4 RELEASED_SEMANTIC_RECEIPTS FOUNDATION ObserveReleasedSemanticReceipts \
     "$receipt_state" "$receipt_reason" "$receipt_next" >> "$cells_file"
   cell 5 TOKEN_CLAIM_EVIDENCED COHERENCE BindTokenClaims \
     "$token_state" "$token_reason" "$token_next" >> "$cells_file"
@@ -413,6 +416,14 @@ build_report() {
     "$trace_state" \
     "$([ "$trace_state" = CLOSED ] && echo ADVERSARIAL_UNKNOWN_TRACE_PRESERVED || echo UNKNOWN_TRACE_NOT_PRESERVED)" \
     "$([ "$trace_state" = CLOSED ] && echo NONE || echo CONSUME_PREDECESSOR_CLAIM_TRACE)" >> "$cells_file"
+
+  local expected_cell_identity observed_cell_identity
+  expected_cell_identity=$(jq -S -c '[.cells[] | {ordinal,id,proof,activity}]' "$denominator")
+  observed_cell_identity=$(jq -S -s -c '[.[] | {ordinal,id,proof,activity}]' "$cells_file")
+  if [ "$expected_cell_identity" != "$observed_cell_identity" ]; then
+    echo 'report cell identity does not match the versioned denominator' >&2
+    exit 1
+  fi
 
   local closed unknown refuted total decision resolution claim_status claim_state problem stage step reason next_operation
   total=$(wc -l < "$cells_file" | tr -d ' ')
