@@ -1,0 +1,23 @@
+{
+  "schema": "gooo/design-evidence/interchange-adoption-profile/v1",
+  "fixture_id": "design-evidence-interchange-adoption",
+  "domain": "design-evidence",
+  "project": {
+    "id": "gooo://project/design-evidence",
+    "repository": "kimjooyoon/gooo-design-evidence",
+    "release_tag": "v0.4.0-dev",
+    "source_path": "fixtures/generated-design-project-v3.json"
+  },
+  "relation": {
+    "id": "gooo://interchange/relation/design-evidence-adopts-v1",
+    "kind": "ADOPTS_INTERCHANGE_ENVELOPE",
+    "state": "MATCH",
+    "left": {"kind": "gooo/design-evidence-ci-receipt/v3", "id": "design://report/core-receipts"},
+    "right": {"kind": "gooo/interchange/specification-report/v1", "id": "gooo://interchange/specification/v0.1.0-dev"},
+    "stage": "ADOPTION",
+    "step": "VERIFY_PINNED_INTERCHANGE_SPECIFICATION",
+    "reason": "PINNED_INTERCHANGE_SPECIFICATION_MATCH",
+    "unknown_class": null,
+    "next_operation": "NONE"
+  }
+}
