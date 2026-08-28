@@ -1,0 +1,29 @@
+package button_system
+namespace designevidence
+
+entity PublicSubject id "design://subject/public-repository"
+entity GoooRelease id "gooo://release/v0.2.0-dev"
+entity DesignSourceBundle id "design://bundle/button-system"
+entity ReleasedSemanticReceipts id "gooo://receipt/button-system/activity-cardinality/v1"
+entity TokenClaim id "design://claim/token"
+entity FigmaCodeMap id "design://claim/figma-code-map"
+entity CodeTokenLineage id "design://claim/code-token-lineage"
+entity IntentionalDifference id "design://claim/intentional-difference"
+entity EvidenceGraph id "design://graph/button-system"
+entity RepositoryEffect id "design://effect/repository"
+entity ReplayReceipt id "design://receipt/replay"
+entity UnknownTrace id "design://trace/unknown"
+entity DesignEvidenceReport id "design://report/core-receipts"
+
+activity ObservePublicSubject(PublicSubject) -> DesignEvidenceReport
+activity LockGoooReleaseIdentity(GoooRelease) -> DesignEvidenceReport
+activity ObserveDesignSourceBundle(DesignSourceBundle) -> DesignEvidenceReport
+activity ObserveReleasedSemanticReceipts(ReleasedSemanticReceipts) -> DesignEvidenceReport
+activity BindTokenClaims(TokenClaim, DesignSourceBundle) -> DesignEvidenceReport
+activity BindFigmaCodeProperties(FigmaCodeMap, DesignSourceBundle) -> DesignEvidenceReport
+activity BindCodeTokenLineage(CodeTokenLineage, DesignSourceBundle) -> DesignEvidenceReport
+activity ReviewIntentionalDifference(IntentionalDifference) -> DesignEvidenceReport
+activity EvaluateEvidenceGraph(EvidenceGraph) -> DesignEvidenceReport
+activity ObserveZeroRepositoryWrite(RepositoryEffect) -> DesignEvidenceReport
+activity ObserveDeterministicReplay(ReplayReceipt) -> DesignEvidenceReport
+activity PreserveAdversarialUnknownTrace(UnknownTrace) -> DesignEvidenceReport

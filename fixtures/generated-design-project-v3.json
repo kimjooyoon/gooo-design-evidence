@@ -1,0 +1,26 @@
+{
+  "schema": "gooo/evidence-generator/project/v2",
+  "id": "gooo://project/design-evidence-core-receipts/v1",
+  "name": "design-evidence-core-receipts",
+  "graph_roles": {"promotion": "meta_graph", "cells": "project_graph"},
+  "expected_output_files": 7,
+  "required_patterns": ["released-core-lock","fixed-denominator","gooo-activity-model","evaluator-contract","ci-evidence-artifact","contract-rfc","deterministic-replay","zero-source-write","explicit-unknown","explicit-refutation","fixture-bundle"],
+  "conformance_checks": [
+    {"ordinal":1,"id":"RELEASE_IDENTITY","expected":"PINNED_RELEASE_OBSERVED"},
+    {"ordinal":2,"id":"ACTIVITY_RECEIPTS","expected":"RELEASED_CORE_RECEIPTS_EQUAL_DENOMINATOR"},
+    {"ordinal":3,"id":"IDENTITY_ANCHOR","expected":"EXACTLY_ONE_ROLE_DECLARED"},
+    {"ordinal":4,"id":"FIXED_DENOMINATOR","expected":"DECLARED_TOTAL_EQUALS_CELL_COUNT"},
+    {"ordinal":5,"id":"DETERMINISTIC_REPLAY","expected":"BYTE_IDENTICAL_OUTPUT"},
+    {"ordinal":6,"id":"ZERO_SOURCE_WRITE","expected":"SOURCE_REPOSITORY_WRITES_ZERO"},
+    {"ordinal":7,"id":"UNKNOWN_TRACE","expected":"DIRECT_MISSING_AND_DEPENDENCY_BLOCKED_PRESERVED"},
+    {"ordinal":8,"id":"REFUTATION_TRACE","expected":"AMBIGUOUS_AND_INVALID_DECISIONS_REFUTED"}
+  ],
+  "scenarios": [
+    {"id":"design-core-receipts-complete","expected_decision":"PROJECT_GENERATED","closed":12,"unknown":0,"refuted":0},
+    {"id":"design-missing-core-receipt","expected_decision":"INCOMPLETE","closed":3,"unknown":9,"refuted":0},
+    {"id":"design-invalid-core-decision","expected_decision":"FAIL_CLOSED","closed":3,"unknown":0,"refuted":9},
+    {"id":"design-ambiguous-evidence-selector","expected_decision":"FAIL_CLOSED","closed":8,"unknown":0,"refuted":4},
+    {"id":"design-core-identity-mismatch","expected_decision":"FAIL_CLOSED","closed":2,"unknown":0,"refuted":10},
+    {"id":"design-missing-identity-anchor","expected_decision":"FAIL_CLOSED","closed":0,"unknown":0,"refuted":12}
+  ]
+}

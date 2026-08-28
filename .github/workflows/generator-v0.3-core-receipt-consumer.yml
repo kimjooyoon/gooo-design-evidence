@@ -1,0 +1,266 @@
+name: Generator v0.3 core receipt consumer
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/generator-v0.3-core-receipt-consumer.yml"
+      - "contracts/generator-v0.3-core-receipt-pin-v1.json"
+      - "contracts/generated-design-denominator-v2.json"
+      - "fixtures/generated-design-project-v3.json"
+      - "examples/button-system-v0.2/main.gooo"
+      - "docs/rfcs/generator-v0.3-core-receipt-consumer-v1.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/generator-v0.3-core-receipt-consumer.yml"
+      - "contracts/generator-v0.3-core-receipt-pin-v1.json"
+      - "contracts/generated-design-denominator-v2.json"
+      - "fixtures/generated-design-project-v3.json"
+      - "examples/button-system-v0.2/main.gooo"
+      - "docs/rfcs/generator-v0.3-core-receipt-consumer-v1.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CORE_TAG: v0.2.0-dev
+      CORE_ASSET: gooo-linux-amd64.tar.gz
+      CORE_SHA256: 99599bdd3c2ae947718881dd78b899234452ab06bd8e60a550320054e1d81ddd
+      GENERATOR_TAG: v0.3.1-dev
+      GENERATOR_ASSET: gooo-evidence-generator-portable-v0.3.1-dev.tar.gz
+      GENERATOR_SHA256: 4978c7719291317d4df74895b7b554f2b16698df9ff249d5f6300d37987e654e
+      PIN: contracts/generator-v0.3-core-receipt-pin-v1.json
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Acquire immutable released tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg core_tag "$CORE_TAG" --arg core_asset "$CORE_ASSET" --arg core_sha "$CORE_SHA256" --arg generator_tag "$GENERATOR_TAG" --arg generator_asset "$GENERATOR_ASSET" --arg generator_sha "$GENERATOR_SHA256" '
+            .core.tag==$core_tag and
+            .core.linux_asset=={name:$core_asset,sha256:$core_sha} and
+            .generator.tag==$generator_tag and
+            .generator.portable_asset=={name:$generator_asset,sha256:$generator_sha} and
+            .semantic_contract.meta_receipts==11 and
+            .semantic_contract.project_receipts==12 and
+            .semantic_contract.core_identity_anchors==1 and
+            .semantic_contract.proofs=={FOUNDATION:4,COHERENCE:5,REGRESSION:3} and
+            .semantic_contract.indicators=={OUTCOME:3,DRIVER:5,GUARDRAIL:4}
+          ' "$PIN" >/dev/null
+
+          gh api "repos/kimjooyoon/meta-ontology-go/git/ref/tags/$CORE_TAG" > "$RUNNER_TEMP/core-ref.json"
+          jq -e '.object.type=="tag" and .object.sha=="733f7b22a365606d42bf238f5c535ff12e5abf8c"' "$RUNNER_TEMP/core-ref.json" >/dev/null
+          gh api repos/kimjooyoon/meta-ontology-go/git/tags/733f7b22a365606d42bf238f5c535ff12e5abf8c > "$RUNNER_TEMP/core-tag.json"
+          jq -e '.object.type=="commit" and .object.sha=="050b11e56d9f972e0d507d406e5da8a60595052b"' "$RUNNER_TEMP/core-tag.json" >/dev/null
+          gh api "repos/kimjooyoon/gooo-evidence-generator/git/ref/tags/$GENERATOR_TAG" > "$RUNNER_TEMP/generator-ref.json"
+          jq -e '.object.type=="tag" and .object.sha=="550e973e56f5c7921405fcc64893bf8637acfbcd"' "$RUNNER_TEMP/generator-ref.json" >/dev/null
+          gh api repos/kimjooyoon/gooo-evidence-generator/git/tags/550e973e56f5c7921405fcc64893bf8637acfbcd > "$RUNNER_TEMP/generator-tag.json"
+          jq -e '.object.type=="commit" and .object.sha=="c8bb802bea7dd2fd04fa1269b2ec435498edaa9c"' "$RUNNER_TEMP/generator-tag.json" >/dev/null
+
+          core_archive="$RUNNER_TEMP/$CORE_ASSET"
+          generator_archive="$RUNNER_TEMP/$GENERATOR_ASSET"
+          curl --fail --location --retry 3 "https://github.com/kimjooyoon/meta-ontology-go/releases/download/$CORE_TAG/$CORE_ASSET" --output "$core_archive"
+          curl --fail --location --retry 3 "https://github.com/kimjooyoon/gooo-evidence-generator/releases/download/$GENERATOR_TAG/$GENERATOR_ASSET" --output "$generator_archive"
+          printf '%s  %s\n' "$CORE_SHA256" "$core_archive" | sha256sum --check --status
+          printf '%s  %s\n' "$GENERATOR_SHA256" "$generator_archive" | sha256sum --check --status
+
+          mkdir -p "$RUNNER_TEMP/core" "$RUNNER_TEMP/generator"
+          tar -xzf "$core_archive" -C "$RUNNER_TEMP/core"
+          tar -xzf "$generator_archive" -C "$RUNNER_TEMP/generator"
+          gooo_bin=$(find "$RUNNER_TEMP/core" -type f -name gooo -print -quit)
+          generator_script=$(find "$RUNNER_TEMP/generator" -type f -path '*/scripts/generate.sh' -print -quit)
+          test -n "$gooo_bin"
+          test -n "$generator_script"
+          chmod +x "$gooo_bin"
+          generator_root=$(dirname "$(dirname "$generator_script")")
+          test -f "$generator_root/scripts/bind-activity-resolutions.sh"
+          jq -e '.tag=="v0.2.0-dev" and .tag_object_sha=="733f7b22a365606d42bf238f5c535ff12e5abf8c" and .target_commit_sha=="050b11e56d9f972e0d507d406e5da8a60595052b"' "$generator_root/contracts/core-release-lock-v1.json" >/dev/null
+          echo "GOOO_BIN=$gooo_bin" >> "$GITHUB_ENV"
+          echo "GENERATOR_ROOT=$generator_root" >> "$GITHUB_ENV"
+
+      - name: Resolve design semantics through released core
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot() {
+            find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}'
+          }
+          snapshot > "$RUNNER_TEMP/repository-before"
+
+          meta_source="$GENERATOR_ROOT/examples/self-hosted-generator/main.gooo"
+          project_source="$GITHUB_WORKSPACE/examples/button-system-v0.2/main.gooo"
+          observation="$GENERATOR_ROOT/contracts/repetition-observation-v1.json"
+          denominator="$GITHUB_WORKSPACE/contracts/generated-design-denominator-v2.json"
+          core_lock="$GENERATOR_ROOT/contracts/core-release-lock-v1.json"
+
+          "$GOOO_BIN" version --json > "$RUNNER_TEMP/version.json"
+          "$GOOO_BIN" check --json "$meta_source" > "$RUNNER_TEMP/meta-syntax.json"
+          "$GOOO_BIN" check --semantic --json "$meta_source" > "$RUNNER_TEMP/meta-semantic.json"
+          "$GOOO_BIN" graph dump "$meta_source" > "$RUNNER_TEMP/meta-graph.json"
+          "$GOOO_BIN" check --json "$project_source" > "$RUNNER_TEMP/project-syntax.json"
+          "$GOOO_BIN" check --semantic --json "$project_source" > "$RUNNER_TEMP/project-semantic.json"
+          "$GOOO_BIN" graph dump "$project_source" > "$RUNNER_TEMP/project-graph.json"
+
+          jq -e '.schema_version=="gooo-version/v1" and .language=="gooo"' "$RUNNER_TEMP/version.json" >/dev/null
+          jq -e '.status=="ok" and .semantic_hash!=null' "$RUNNER_TEMP/meta-semantic.json" "$RUNNER_TEMP/project-semantic.json" >/dev/null
+          jq -e '.schema_version=="gooo-graph/v1"' "$RUNNER_TEMP/meta-graph.json" "$RUNNER_TEMP/project-graph.json" >/dev/null
+          jq -e '[.cells[]|select(.core_identity_anchor==true)]|length==1' "$denominator" >/dev/null
+
+          jq -S '[.patterns[]|select(.meta_activity!=null)] | to_entries | {schema:"gooo/evidence-generator/activity-selector-set/v1",role:"meta_graph",selectors:[.[]|{ordinal:(.key+1),id:.value.id,activity:.value.meta_activity,selector:{name:.value.meta_activity}}]}' "$observation" > "$RUNNER_TEMP/meta-selectors.json"
+          jq -S '{schema:"gooo/evidence-generator/activity-selector-set/v1",role:"project_graph",selectors:[.cells[]|{ordinal,id,activity,selector:{name:.activity}}]}' "$denominator" > "$RUNNER_TEMP/project-selectors.json"
+
+          bash "$GENERATOR_ROOT/scripts/bind-activity-resolutions.sh" "$GOOO_BIN" "$meta_source" "$RUNNER_TEMP/meta-graph.json" "$RUNNER_TEMP/meta-selectors.json" "$core_lock" "$RUNNER_TEMP/resolved-meta-graph.json" meta_graph
+          bash "$GENERATOR_ROOT/scripts/bind-activity-resolutions.sh" "$GOOO_BIN" "$project_source" "$RUNNER_TEMP/project-graph.json" "$RUNNER_TEMP/project-selectors.json" "$core_lock" "$RUNNER_TEMP/resolved-project-graph.json" project_graph
+
+          jq -e '.activity_resolution_observation.summary=={expected:11,observed:11,closed:11,unknown:0,refuted:0,unique_selectors:11}' "$RUNNER_TEMP/resolved-meta-graph.json" >/dev/null
+          jq -e '.activity_resolution_observation.summary=={expected:12,observed:12,closed:12,unknown:0,refuted:0,unique_selectors:12}' "$RUNNER_TEMP/resolved-project-graph.json" >/dev/null
+
+      - name: Generate complete and degraded design evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnose_failure() {
+            set +e
+            echo '--- design core receipt diagnostics ---'
+            for candidate in "$RUNNER_TEMP/complete-a/generation-report.json" "$RUNNER_TEMP/missing-receipt/generation-report.json" "$RUNNER_TEMP/invalid-decision/generation-report.json" "$RUNNER_TEMP/ambiguous-selector/generation-report.json" "$RUNNER_TEMP/identity-mismatch/generation-report.json" "$RUNNER_TEMP/missing-anchor/generation-report.json"; do
+              if [ -f "$candidate" ]; then
+                jq -c '{file:input_filename,decision,summary,core_resolution,proofs,indicators,claim}' "$candidate"
+              fi
+            done
+          }
+          trap diagnose_failure ERR
+
+          denominator="$GITHUB_WORKSPACE/contracts/generated-design-denominator-v2.json"
+          observation="$GENERATOR_ROOT/contracts/repetition-observation-v1.json"
+          profile="$GITHUB_WORKSPACE/fixtures/generated-design-project-v3.json"
+          project_source="$GITHUB_WORKSPACE/examples/button-system-v0.2/main.gooo"
+          core_lock="$GENERATOR_ROOT/contracts/core-release-lock-v1.json"
+
+          start_ns=$(date +%s%N)
+          /usr/bin/time -f '%M' -o "$RUNNER_TEMP/generator-rss" bash "$GENERATOR_ROOT/scripts/generate.sh" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/resolved-meta-graph.json" "$RUNNER_TEMP/resolved-project-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/complete-a" "$SUBJECT_SHA" design-core-receipts-complete
+          end_ns=$(date +%s%N)
+          echo $(( (end_ns-start_ns)/1000000 )) > "$RUNNER_TEMP/generator-wall-ms"
+          bash "$GENERATOR_ROOT/scripts/generate.sh" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/resolved-meta-graph.json" "$RUNNER_TEMP/resolved-project-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/complete-b" "$SUBJECT_SHA" design-core-receipts-complete
+          diff -qr "$RUNNER_TEMP/complete-a" "$RUNNER_TEMP/complete-b"
+          bash "$GENERATOR_ROOT/scripts/verify.sh" "$RUNNER_TEMP/complete-a" "$RUNNER_TEMP/verification.json"
+
+          report="$RUNNER_TEMP/complete-a/generation-report.json"
+          jq -e '
+            .decision=="PROJECT_GENERATED" and .summary.closed==12 and .summary.unknown==0 and .summary.refuted==0 and
+            .core_resolution.identity_match and .core_resolution.identity_anchor_count==1 and
+            .core_resolution.meta=={required:11,closed:11,unknown:0,refuted:0} and
+            .core_resolution.project=={required:12,closed:12,unknown:0,refuted:0} and
+            .authority.activity_binding=="RELEASED_GOOO_ACTIVITY_RESOLUTION_RECEIPTS" and
+            ([.proofs[]|select(.choice=="FOUNDATION" and .closed==4 and .total==4)]|length)==1 and
+            ([.proofs[]|select(.choice=="COHERENCE" and .closed==5 and .total==5)]|length)==1 and
+            ([.proofs[]|select(.choice=="REGRESSION" and .closed==3 and .total==3)]|length)==1 and
+            ([.indicators[]|select(.class=="OUTCOME" and .closed==3 and .total==3)]|length)==1 and
+            ([.indicators[]|select(.class=="DRIVER" and .closed==5 and .total==5)]|length)==1 and
+            ([.indicators[]|select(.class=="GUARDRAIL" and .closed==4 and .total==4)]|length)==1 and
+            .claim.state=="CLOSED"
+          ' "$report" >/dev/null
+          jq -e '.decision=="GENERATION_VERIFIED" and .summary.closed==6 and .summary.total==6' "$RUNNER_TEMP/verification.json" >/dev/null
+
+          jq '.activity_resolution_observation.entries |= map(select(.id!="DESIGN_SOURCE_BUNDLE"))' "$RUNNER_TEMP/resolved-project-graph.json" > "$RUNNER_TEMP/missing-receipt-graph.json"
+          bash "$GENERATOR_ROOT/scripts/generate.sh" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/resolved-meta-graph.json" "$RUNNER_TEMP/missing-receipt-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/missing-receipt" "$SUBJECT_SHA" design-missing-core-receipt
+          jq -e '.decision=="INCOMPLETE" and .summary.closed==3 and .summary.unknown==9 and .summary.direct_missing==1 and .summary.dependency_blocked==8 and .claim.stage=="RESOLUTION_OBSERVATION" and .claim.step=="BIND_CORE_ACTIVITY_RESOLUTION_RECEIPT" and .claim.reason=="CORE_ACTIVITY_RESOLUTION_RECEIPT_UNAVAILABLE" and .claim.unknown_class=="DIRECT_MISSING"' "$RUNNER_TEMP/missing-receipt/generation-report.json" >/dev/null
+
+          jq '(.activity_resolution_observation.entries[]|select(.id=="DESIGN_SOURCE_BUNDLE")|.receipt.decision)="FIXED_POINT"' "$RUNNER_TEMP/resolved-project-graph.json" > "$RUNNER_TEMP/invalid-decision-graph.json"
+          bash "$GENERATOR_ROOT/scripts/generate.sh" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/resolved-meta-graph.json" "$RUNNER_TEMP/invalid-decision-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/invalid-decision" "$SUBJECT_SHA" design-invalid-core-decision
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed==3 and .summary.refuted==9 and .claim.stage=="RESOLUTION" and .claim.step=="RESOLVE_ACTIVITY_CARDINALITY" and .claim.reason=="UNRECOGNIZED_CORE_ACTIVITY_RESOLUTION_DECISION"' "$RUNNER_TEMP/invalid-decision/generation-report.json" >/dev/null
+
+          jq '(.selectors[]|select(.id=="EVIDENCE_GRAPH")|.selector)={namespace:"designevidence"}' "$RUNNER_TEMP/project-selectors.json" > "$RUNNER_TEMP/ambiguous-selectors.json"
+          bash "$GENERATOR_ROOT/scripts/bind-activity-resolutions.sh" "$GOOO_BIN" "$project_source" "$RUNNER_TEMP/project-graph.json" "$RUNNER_TEMP/ambiguous-selectors.json" "$core_lock" "$RUNNER_TEMP/ambiguous-project-graph.json" project_graph
+          bash "$GENERATOR_ROOT/scripts/generate.sh" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/resolved-meta-graph.json" "$RUNNER_TEMP/ambiguous-project-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/ambiguous-selector" "$SUBJECT_SHA" design-ambiguous-evidence-selector
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed==8 and .summary.refuted==4 and .claim.stage=="EVIDENCE" and .claim.step=="EVALUATE_EVIDENCE_GRAPH" and .claim.reason=="AMBIGUOUS_ACTIVITY_BINDING"' "$RUNNER_TEMP/ambiguous-selector/generation-report.json" >/dev/null
+
+          jq '(.activity_resolution_observation.core_release.tag)="v0.2.0-dev-mismatch"' "$RUNNER_TEMP/resolved-project-graph.json" > "$RUNNER_TEMP/identity-mismatch-graph.json"
+          bash "$GENERATOR_ROOT/scripts/generate.sh" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/resolved-meta-graph.json" "$RUNNER_TEMP/identity-mismatch-graph.json" "$denominator" "$observation" "$profile" "$RUNNER_TEMP/identity-mismatch" "$SUBJECT_SHA" design-core-identity-mismatch
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed==2 and .summary.refuted==10 and .core_resolution.identity_match==false and .core_resolution.identity_anchor_count==1 and .claim.stage=="CORE_RELEASE" and .claim.step=="BIND_CORE_RESOLUTION_RELEASE_IDENTITY" and .claim.reason=="CORE_RESOLUTION_RELEASE_IDENTITY_MISMATCH"' "$RUNNER_TEMP/identity-mismatch/generation-report.json" >/dev/null
+
+          jq 'del(.cells[].core_identity_anchor)' "$denominator" > "$RUNNER_TEMP/missing-anchor-denominator.json"
+          bash "$GENERATOR_ROOT/scripts/generate.sh" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/resolved-meta-graph.json" "$RUNNER_TEMP/resolved-project-graph.json" "$RUNNER_TEMP/missing-anchor-denominator.json" "$observation" "$profile" "$RUNNER_TEMP/missing-anchor" "$SUBJECT_SHA" design-missing-identity-anchor
+          jq -e '.decision=="FAIL_CLOSED" and .summary.closed==0 and .summary.refuted==12 and .core_resolution.identity_anchor_count==0 and .claim.stage=="DENOMINATOR" and .claim.step=="SELECT_CORE_IDENTITY_ANCHOR" and .claim.reason=="CORE_IDENTITY_ANCHOR_CARDINALITY_INVALID"' "$RUNNER_TEMP/missing-anchor/generation-report.json" >/dev/null
+
+      - name: Publish exact human indicators
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot() {
+            find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}'
+          }
+          before=$(cat "$RUNNER_TEMP/repository-before")
+          after=$(snapshot)
+          if [ "$before" = "$after" ]; then writes=0; else writes=1; fi
+          peak_rss_kib=$(cat "$RUNNER_TEMP/generator-rss")
+          wall_ms=$(cat "$RUNNER_TEMP/generator-wall-ms")
+
+          jq -S -n --arg subject_sha "$SUBJECT_SHA" --arg before "$before" --arg after "$after" --argjson writes "$writes" --argjson peak_rss_kib "$peak_rss_kib" --argjson wall_ms "$wall_ms" --slurpfile report "$RUNNER_TEMP/complete-a/generation-report.json" '
+            {schema:"gooo/design-evidence/generator-v0.3-consumer-runtime/v1",
+             subject_sha:$subject_sha,
+             releases:{core:"v0.2.0-dev",generator:"v0.3.1-dev"},
+             completion_units:{closed:6,total:6},
+             core_resolution:$report[0].core_resolution,
+             cells:$report[0].summary,
+             proofs:$report[0].proofs,
+             indicators:$report[0].indicators,
+             generator:{peak_rss_kib:$peak_rss_kib,wall_ms:$wall_ms},
+             repository:{before_digest:$before,after_digest:$after,writes:$writes},
+             deterministic_replay:true,
+             local_tests_run:0}
+          ' > "$RUNNER_TEMP/consumer-runtime.json"
+          jq -e '.completion_units=={closed:6,total:6} and .repository.writes==0 and .repository.before_digest==.repository.after_digest and .deterministic_replay and .local_tests_run==0' "$RUNNER_TEMP/consumer-runtime.json" >/dev/null
+
+          {
+            echo '## Design evidence: released semantic receipts'
+            echo
+            echo '| Indicator | Exact result |'
+            echo '|---|---:|'
+            jq -r '"| Completion units | \(.completion_units.closed)/\(.completion_units.total) CLOSED |",
+                   "| Core receipts | \(.core_resolution.meta.closed + .core_resolution.project.closed)/\(.core_resolution.meta.required + .core_resolution.project.required) CLOSED |",
+                   "| Generated cells | \(.cells.closed)/12 CLOSED; \(.cells.unknown) UNKNOWN; \(.cells.refuted) REFUTED |",
+                   "| Deterministic replay | \(.deterministic_replay) |",
+                   "| Repository writes | \(.repository.writes) |",
+                   "| Local tests | \(.local_tests_run) |",
+                   "| Peak RSS | \(.generator.peak_rss_kib) KiB |",
+                   "| Wall time | \(.generator.wall_ms) ms |"' "$RUNNER_TEMP/consumer-runtime.json"
+            echo
+            echo '### Proof denominators'
+            jq -r '.proofs[] | "- \(.choice): \(.closed)/\(.total) CLOSED"' "$RUNNER_TEMP/consumer-runtime.json"
+            echo
+            echo '### Indicator denominators'
+            jq -r '.indicators[] | "- \(.class): \(.closed)/\(.total) CLOSED"' "$RUNNER_TEMP/consumer-runtime.json"
+            echo
+            echo '### Degraded resolution'
+            jq -r '"- Missing receipt: \(.summary.closed) CLOSED / \(.summary.unknown) UNKNOWN; \(.claim.stage) / \(.claim.step) / \(.claim.reason)"' "$RUNNER_TEMP/missing-receipt/generation-report.json"
+            jq -r '"- Invalid decision: \(.summary.closed) CLOSED / \(.summary.refuted) REFUTED; \(.claim.stage) / \(.claim.step) / \(.claim.reason)"' "$RUNNER_TEMP/invalid-decision/generation-report.json"
+            jq -r '"- Ambiguous selector: \(.summary.closed) CLOSED / \(.summary.refuted) REFUTED; \(.claim.stage) / \(.claim.step) / \(.claim.reason)"' "$RUNNER_TEMP/ambiguous-selector/generation-report.json"
+            jq -r '"- Identity mismatch: \(.summary.closed) CLOSED / \(.summary.refuted) REFUTED; anchor \(.core_resolution.identity_anchor_count)"' "$RUNNER_TEMP/identity-mismatch/generation-report.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$writes" -eq 0
+
+      - name: Upload design receipt evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: design-core-receipts-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/complete-a
+            ${{ runner.temp }}/verification.json
+            ${{ runner.temp }}/missing-receipt/generation-report.json
+            ${{ runner.temp }}/invalid-decision/generation-report.json
+            ${{ runner.temp }}/ambiguous-selector/generation-report.json
+            ${{ runner.temp }}/identity-mismatch/generation-report.json
+            ${{ runner.temp }}/missing-anchor/generation-report.json
+            ${{ runner.temp }}/resolved-meta-graph.json
+            ${{ runner.temp }}/resolved-project-graph.json
+            ${{ runner.temp }}/consumer-runtime.json
