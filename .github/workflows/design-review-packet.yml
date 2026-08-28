@@ -1,0 +1,329 @@
+name: Design release review packet
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: design-review-packet-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SOURCE: examples/design-review-packet/main.gooo
+      DENOMINATOR: contracts/design-review-packet-denominator-v1.json
+      REQUEST: fixtures/button-system/review-request.json
+      GENERATOR: scripts/generate-design-review-packet.sh
+      EVALUATOR: scripts/evaluate-design-review-packet.sh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.0'
+
+      - name: Observe Go 1.27 and fix only module roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(go env GOVERSION)" = "go1.27.0"
+          module_roots=0
+          while IFS= read -r -d '' module; do
+            module_roots=$((module_roots+1))
+            (cd "$(dirname "$module")" && go fix ./...)
+          done < <(find . -type f -name go.mod -not -path './.git/*' -print0)
+          jq -S -n --arg go_version "$(go env GOVERSION)" --argjson module_roots "$module_roots" \
+            '{schema:"gooo/design-evidence/review-packet-go-fix/v1",go_version:$go_version,
+              module_roots:$module_roots,go_fix_targets:$module_roots}' > "$RUNNER_TEMP/go-fix-observation.json"
+
+      - name: Download immutable core, matcher, and claim releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_lock=contracts/core-release-lock-v3.json
+          repository=$(jq -r .repository "$core_lock")
+          tag=$(jq -r .tag "$core_lock")
+          ref=$(gh api "repos/$repository/git/ref/tags/$tag")
+          test "$(jq -r .object.type <<<"$ref")" = "$(jq -r .ref_type "$core_lock")"
+          test "$(jq -r .object.sha <<<"$ref")" = "$(jq -r .tag_object_sha "$core_lock")"
+          test "$(jq -r .object.sha <<<"$ref")" = "$(jq -r .target_commit_sha "$core_lock")"
+          release=$(gh api "repos/$repository/releases/tags/$tag")
+          asset_id=$(jq -r .asset.id "$core_lock")
+          asset_name=$(jq -r .asset.name "$core_lock")
+          test "$(jq -r --arg name "$asset_name" '.assets[]|select(.name==$name)|.id' <<<"$release")" = "$asset_id"
+          test "$(jq -r --arg name "$asset_name" '.assets[]|select(.name==$name)|.size' <<<"$release")" = "$(jq -r .asset.size "$core_lock")"
+          gh api -H 'Accept: application/octet-stream' "repos/$repository/releases/assets/$asset_id" > "$RUNNER_TEMP/core.tar.gz"
+          printf '%s  %s\n' "$(jq -r .asset.sha256 "$core_lock")" "$RUNNER_TEMP/core.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/core"
+          tar -xzf "$RUNNER_TEMP/core.tar.gz" -C "$RUNNER_TEMP/core"
+
+          for tuple in \
+            'matcher:contracts/design-matcher-v0.5-release-lock-v1.json' \
+            'adoption:contracts/design-claim-adoption-v0.6-release-lock-v1.json'; do
+            key=${tuple%%:*}
+            lock=${tuple#*:}
+            repository=$(jq -r .repository "$lock")
+            tag=$(jq -r .tag "$lock")
+            ref=$(gh api "repos/$repository/git/ref/tags/$tag")
+            test "$(jq -r .object.type <<<"$ref")" = "$(jq -r .ref_type "$lock")"
+            test "$(jq -r .object.sha <<<"$ref")" = "$(jq -r .tag_object_sha "$lock")"
+            test "$(jq -r .object.sha <<<"$ref")" = "$(jq -r .target_commit_sha "$lock")"
+            release=$(gh api "repos/$repository/releases/tags/$tag")
+            asset_id=$(jq -r .asset.id "$lock")
+            asset_name=$(jq -r .asset.name "$lock")
+            test "$(jq -r --arg name "$asset_name" '.assets[]|select(.name==$name)|.id' <<<"$release")" = "$asset_id"
+            test "$(jq -r --arg name "$asset_name" '.assets[]|select(.name==$name)|.size' <<<"$release")" = "$(jq -r .asset.size "$lock")"
+            gh api -H 'Accept: application/octet-stream' "repos/$repository/releases/assets/$asset_id" > "$RUNNER_TEMP/$key.zip"
+            printf '%s  %s\n' "$(jq -r .asset.sha256 "$lock")" "$RUNNER_TEMP/$key.zip" | sha256sum -c -
+            mkdir -p "$RUNNER_TEMP/$key"
+            unzip -q "$RUNNER_TEMP/$key.zip" -d "$RUNNER_TEMP/$key"
+          done
+
+      - name: Execute Gooo meta decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          gooo="$RUNNER_TEMP/core/gooo"
+          "$gooo" check --json "$SOURCE" > "$RUNNER_TEMP/review-syntax.json"
+          "$gooo" check --semantic --json "$SOURCE" > "$RUNNER_TEMP/review-semantic.json"
+          "$gooo" graph dump "$SOURCE" > "$RUNNER_TEMP/review-graph.json"
+          jq -e '.status=="ok"' "$RUNNER_TEMP/review-syntax.json" "$RUNNER_TEMP/review-semantic.json" >/dev/null
+
+          for tuple in \
+            'ResolveReviewReadyClaim:review-ready-receipt.json' \
+            'PreserveMissingMatcherUnknown:review-missing-receipt.json' \
+            'RefuteClaimTupleMismatch:review-tuple-refuted-receipt.json' \
+            'RefuteUnreviewedMismatch:review-mismatch-refuted-receipt.json' \
+            'RefuteAuthorityEscalation:review-authority-refuted-receipt.json'; do
+            activity=${tuple%%:*}
+            file=${tuple#*:}
+            "$gooo" claim resolve "$SOURCE" --activity "$activity" --json > "$RUNNER_TEMP/$file"
+          done
+
+          mkdir -p "$RUNNER_TEMP/receipt-replay"
+          equal=0
+          for tuple in \
+            'ResolveReviewReadyClaim:review-ready-receipt.json' \
+            'PreserveMissingMatcherUnknown:review-missing-receipt.json' \
+            'RefuteClaimTupleMismatch:review-tuple-refuted-receipt.json' \
+            'RefuteUnreviewedMismatch:review-mismatch-refuted-receipt.json' \
+            'RefuteAuthorityEscalation:review-authority-refuted-receipt.json'; do
+            activity=${tuple%%:*}
+            file=${tuple#*:}
+            "$gooo" claim resolve "$SOURCE" --activity "$activity" --json > "$RUNNER_TEMP/receipt-replay/$file"
+            if cmp -s "$RUNNER_TEMP/$file" "$RUNNER_TEMP/receipt-replay/$file"; then equal=$((equal+1)); fi
+          done
+          jq -S -n --argjson equal "$equal" \
+            '{schema:"gooo/design-evidence/review-decision-replay/v1",receipts_total:5,receipts_equal:$equal}' \
+            > "$RUNNER_TEMP/review-decision-replay.json"
+
+      - name: Generate normal and adverse review packets
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$RUNNER_TEMP/repository-before.bin"
+          after="$RUNNER_TEMP/repository-after.bin"
+          git status --porcelain=v1 -z --untracked-files=all > "$before"
+          common=(
+            "$RUNNER_TEMP/review-graph.json" "$DENOMINATOR" "$REQUEST"
+            "$RUNNER_TEMP/matcher" "$RUNNER_TEMP/adoption"
+            "$RUNNER_TEMP/review-ready-receipt.json" "$RUNNER_TEMP/review-missing-receipt.json"
+            "$RUNNER_TEMP/review-tuple-refuted-receipt.json" "$RUNNER_TEMP/review-mismatch-refuted-receipt.json"
+            "$RUNNER_TEMP/review-authority-refuted-receipt.json"
+          )
+
+          start_ns=$(date +%s%N)
+          /usr/bin/time -f '%M' -o "$RUNNER_TEMP/review-rss" \
+            bash "$GENERATOR" "${common[@]}" "$RUNNER_TEMP/design-review-packet.json" "$RUNNER_TEMP/design-review-packet.md" "$SUBJECT_SHA" complete
+          bash "$GENERATOR" "${common[@]}" "$RUNNER_TEMP/design-review-packet-replay.json" "$RUNNER_TEMP/design-review-packet-replay.md" "$SUBJECT_SHA" complete
+          replay_equal=0
+          if cmp -s "$RUNNER_TEMP/design-review-packet.json" "$RUNNER_TEMP/design-review-packet-replay.json"; then replay_equal=$((replay_equal+1)); fi
+          if cmp -s "$RUNNER_TEMP/design-review-packet.md" "$RUNNER_TEMP/design-review-packet-replay.md"; then replay_equal=$((replay_equal+1)); fi
+
+          cp -R "$RUNNER_TEMP/matcher" "$RUNNER_TEMP/matcher-missing"
+          printf 'null\n' > "$RUNNER_TEMP/matcher-missing/matcher-normal.json"
+          missing_common=("${common[@]}")
+          missing_common[3]="$RUNNER_TEMP/matcher-missing"
+          bash "$GENERATOR" "${missing_common[@]}" "$RUNNER_TEMP/design-review-unknown.json" "$RUNNER_TEMP/design-review-unknown.md" "$SUBJECT_SHA" missing-matcher-report
+
+          cp -R "$RUNNER_TEMP/adoption" "$RUNNER_TEMP/adoption-tampered"
+          jq '.claim.unknown_class="CONTEXT_MISSING"' "$RUNNER_TEMP/adoption-tampered/claim-missing.json" > "$RUNNER_TEMP/adoption-tampered/next.json"
+          mv "$RUNNER_TEMP/adoption-tampered/next.json" "$RUNNER_TEMP/adoption-tampered/claim-missing.json"
+          tuple_common=("${common[@]}")
+          tuple_common[4]="$RUNNER_TEMP/adoption-tampered"
+          bash "$GENERATOR" "${tuple_common[@]}" "$RUNNER_TEMP/design-review-tuple-refuted.json" "$RUNNER_TEMP/design-review-tuple-refuted.md" "$SUBJECT_SHA" claim-tuple-tamper
+
+          cp -R "$RUNNER_TEMP/matcher" "$RUNNER_TEMP/matcher-unreviewed"
+          jq '
+            .decision="FAIL_CLOSED" |
+            .claim={blocked_by:["ios-radius-intentional-difference"],next_operation:"REVIEW_OR_REPAIR_DESIGN_MISMATCH",
+              reason:"INTENTIONAL_DIFFERENCE_UNREVIEWED",stage:"RELATION",state:"REFUTED",
+              step:"RESOLVE_DESIGN_CODE_RELATION",unknown_class:null} |
+            .summary.reviewed_mismatches=0 | .summary.unresolved_mismatches=1 |
+            (.relations[]|select(.id=="ios-radius-intentional-difference")) |=
+              (.disposition="UNRESOLVED_CONTRADICTION" | .reason="INTENTIONAL_DIFFERENCE_UNREVIEWED" |
+               .next_operation="REVIEW_OR_REPAIR_DESIGN_MISMATCH")
+          ' "$RUNNER_TEMP/matcher-unreviewed/matcher-normal.json" > "$RUNNER_TEMP/matcher-unreviewed/next.json"
+          mv "$RUNNER_TEMP/matcher-unreviewed/next.json" "$RUNNER_TEMP/matcher-unreviewed/matcher-normal.json"
+          mismatch_common=("${common[@]}")
+          mismatch_common[3]="$RUNNER_TEMP/matcher-unreviewed"
+          bash "$GENERATOR" "${mismatch_common[@]}" "$RUNNER_TEMP/design-review-mismatch-refuted.json" "$RUNNER_TEMP/design-review-mismatch-refuted.md" "$SUBJECT_SHA" unreviewed-mismatch
+
+          jq '.authority.automatic_merge_authorized=true' "$REQUEST" > "$RUNNER_TEMP/review-request-escalated.json"
+          authority_common=("${common[@]}")
+          authority_common[2]="$RUNNER_TEMP/review-request-escalated.json"
+          bash "$GENERATOR" "${authority_common[@]}" "$RUNNER_TEMP/design-review-authority-refuted.json" "$RUNNER_TEMP/design-review-authority-refuted.md" "$SUBJECT_SHA" authority-escalation
+
+          jq '(.nodes)|=map(select(.name!="GenerateHumanReviewPacket"))' "$RUNNER_TEMP/review-graph.json" > "$RUNNER_TEMP/review-graph-missing-activity.json"
+          missing_meta_common=("${common[@]}")
+          missing_meta_common[0]="$RUNNER_TEMP/review-graph-missing-activity.json"
+          if bash "$GENERATOR" "${missing_meta_common[@]}" "$RUNNER_TEMP/missing-meta.json" "$RUNNER_TEMP/missing-meta.md" "$SUBJECT_SHA" complete; then
+            echo 'review generator accepted a missing Gooo activity' >&2
+            exit 1
+          fi
+
+          end_ns=$(date +%s%N)
+          wall_ms=$(( (end_ns-start_ns)/1000000 ))
+          git status --porcelain=v1 -z --untracked-files=all > "$after"
+          if cmp -s "$before" "$after"; then writes=0; else writes=1; fi
+
+          repository_files=0
+          descendant_directories=0
+          go_files=0
+          go_lines=0
+          gooo_files=0
+          gooo_lines=0
+          per_file='[]'
+          while IFS= read -r -d '' file; do
+            repository_files=$((repository_files+1))
+          done < <(find . -type f -not -path './.git/*' -not -path './README.md' -print0)
+          while IFS= read -r -d '' directory; do
+            descendant_directories=$((descendant_directories+1))
+          done < <(find . -mindepth 1 -type d -not -path './.git' -not -path './.git/*' -print0)
+          while IFS= read -r -d '' file; do
+            lines=$(wc -l < "$file" | tr -d ' ')
+            path=${file#./}
+            case "$file" in
+              *.go) language=Go; go_files=$((go_files+1)); go_lines=$((go_lines+lines)) ;;
+              *.gooo) language=Gooo; gooo_files=$((gooo_files+1)); gooo_lines=$((gooo_lines+lines)) ;;
+            esac
+            per_file=$(jq -c --arg language "$language" --arg path "$path" --argjson lines "$lines" \
+              '.+[{language:$language,path:$path,lines:$lines}]' <<<"$per_file")
+          done < <(find . -type f \( -name '*.go' -o -name '*.gooo' \) -not -path './.git/*' -print0 | sort -z)
+
+          jq -S -n --arg subject_sha "$SUBJECT_SHA" --arg go_version "$(go env GOVERSION)" \
+            --argjson module_roots "$(jq .module_roots "$RUNNER_TEMP/go-fix-observation.json")" \
+            --argjson peak_rss_kib "$(cat "$RUNNER_TEMP/review-rss")" --argjson wall_ms "$wall_ms" \
+            --argjson writes "$writes" --argjson replay_equal "$replay_equal" \
+            --argjson decision_equal "$(jq .receipts_equal "$RUNNER_TEMP/review-decision-replay.json")" \
+            --argjson repository_files "$repository_files" --argjson descendant_directories "$descendant_directories" \
+            --argjson go_files "$go_files" --argjson go_lines "$go_lines" \
+            --argjson gooo_files "$gooo_files" --argjson gooo_lines "$gooo_lines" --argjson per_file "$per_file" '
+            {schema:"gooo/design-evidence/review-packet-runtime/v1",subject_sha:$subject_sha,go_version:$go_version,
+              go_fix_module_roots:$module_roots,peak_rss_kib:$peak_rss_kib,wall_ms:$wall_ms,
+              decision_receipts_equal:$decision_equal,replay_comparisons_equal:$replay_equal,
+              inventory:{repository_files:$repository_files,descendant_directories:$descendant_directories,
+                root_readme_excluded:true,go:{files:$go_files,physical_lines:$go_lines},
+                gooo:{files:$gooo_files,physical_lines:$gooo_lines},per_file:$per_file},
+              repository_writes:$writes,local_tests_run:0,cross_project_required_gates:0}
+          ' > "$RUNNER_TEMP/design-review-runtime.json"
+
+      - name: Close fixed review-packet denominator
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            "$DENOMINATOR" "$RUNNER_TEMP/design-review-packet.json" "$RUNNER_TEMP/design-review-packet.md"
+            "$RUNNER_TEMP/design-review-unknown.json" "$RUNNER_TEMP/design-review-tuple-refuted.json"
+            "$RUNNER_TEMP/design-review-mismatch-refuted.json" "$RUNNER_TEMP/design-review-authority-refuted.json"
+            "$RUNNER_TEMP/design-review-runtime.json"
+          )
+          bash "$EVALUATOR" "${args[@]}" "$RUNNER_TEMP/design-review-conformance.json" "$SUBJECT_SHA"
+          bash "$EVALUATOR" "${args[@]}" "$RUNNER_TEMP/design-review-conformance-replay.json" "$SUBJECT_SHA"
+          cmp -s "$RUNNER_TEMP/design-review-conformance.json" "$RUNNER_TEMP/design-review-conformance-replay.json"
+          jq -e '
+            .decision=="DESIGN_RELEASE_REVIEW_PACKET_CONFORMANT" and
+            .summary.closed_cells==15 and .summary.total_cells==15 and
+            .summary.release_inputs_observed==3 and .summary.review_requests_observed==1 and
+            .summary.relation_dispositions_observed==4 and .summary.claim_tuples_observed==4 and
+            .summary.claim_fields_observed==24 and .summary.meta_decision_receipts_observed==5 and
+            .summary.generated_artifacts_observed==2 and .summary.counterexamples_observed==4 and
+            .summary.replay_comparisons_equal==2 and .summary.repository_writes==0 and
+            .summary.local_tests_run==0 and .summary.cross_project_required_gates==0 and
+            ([.proofs[]|select(.closed==5 and .total==5)]|length)==3 and
+            ([.indicator_classes[]|select(.closed==5 and .total==5)]|length)==3 and
+            .claim.next_operation=="PUBLISH_IMMUTABLE_DESIGN_REVIEW_PACKET_RELEASE"
+          ' "$RUNNER_TEMP/design-review-conformance.json" >/dev/null
+
+      - name: Publish human-readable review metrics
+        shell: bash
+        run: |
+          {
+            echo '## Gooo design release review packet'
+            echo
+            jq -r '
+              "- conformance cells: \(.summary.closed_cells)/\(.summary.total_cells) CLOSED",
+              "- release inputs: \(.summary.release_inputs_observed)/\(.summary.release_inputs_total)",
+              "- review requests: \(.summary.review_requests_observed)/\(.summary.review_requests_total)",
+              "- relation dispositions: \(.summary.relation_dispositions_observed)/\(.summary.relation_dispositions_total)",
+              "- claim tuples / fields: \(.summary.claim_tuples_observed)/\(.summary.claim_tuples_total) / \(.summary.claim_fields_observed)/\(.summary.claim_fields_total)",
+              "- Gooo decision receipts: \(.summary.meta_decision_receipts_observed)/\(.summary.meta_decision_receipts_total)",
+              "- generated artifacts: \(.summary.generated_artifacts_observed)/\(.summary.generated_artifacts_total)",
+              "- counterexamples: \(.summary.counterexamples_observed)/\(.summary.counterexamples_total)",
+              "- replay comparisons: \(.summary.replay_comparisons_equal)/\(.summary.replay_comparisons_total)",
+              "- repository writes / local tests / cross-project gates: \(.summary.repository_writes) / \(.summary.local_tests_run) / \(.summary.cross_project_required_gates)"
+            ' "$RUNNER_TEMP/design-review-conformance.json"
+            jq -r '"- peak RSS / wall time: \(.performance.peak_rss_kib) KiB / \(.performance.wall_ms) ms",
+              "- files / descendant directories: \(.inventory.repository_files) / \(.inventory.descendant_directories)",
+              "- Go files / lines: \(.inventory.go.files) / \(.inventory.go.physical_lines)",
+              "- Gooo files / lines: \(.inventory.gooo.files) / \(.inventory.gooo.physical_lines)"' \
+              "$RUNNER_TEMP/design-review-conformance.json"
+            echo
+            cat "$RUNNER_TEMP/design-review-packet.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce zero input-repository writes
+        run: test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: design-review-packet-${{ env.SUBJECT_SHA }}
+          path: |
+            ${{ runner.temp }}/go-fix-observation.json
+            ${{ runner.temp }}/review-syntax.json
+            ${{ runner.temp }}/review-semantic.json
+            ${{ runner.temp }}/review-graph.json
+            ${{ runner.temp }}/review-ready-receipt.json
+            ${{ runner.temp }}/review-missing-receipt.json
+            ${{ runner.temp }}/review-tuple-refuted-receipt.json
+            ${{ runner.temp }}/review-mismatch-refuted-receipt.json
+            ${{ runner.temp }}/review-authority-refuted-receipt.json
+            ${{ runner.temp }}/review-decision-replay.json
+            ${{ runner.temp }}/design-review-packet.json
+            ${{ runner.temp }}/design-review-packet.md
+            ${{ runner.temp }}/design-review-packet-replay.json
+            ${{ runner.temp }}/design-review-packet-replay.md
+            ${{ runner.temp }}/design-review-unknown.json
+            ${{ runner.temp }}/design-review-unknown.md
+            ${{ runner.temp }}/design-review-tuple-refuted.json
+            ${{ runner.temp }}/design-review-tuple-refuted.md
+            ${{ runner.temp }}/design-review-mismatch-refuted.json
+            ${{ runner.temp }}/design-review-mismatch-refuted.md
+            ${{ runner.temp }}/design-review-authority-refuted.json
+            ${{ runner.temp }}/design-review-authority-refuted.md
+            ${{ runner.temp }}/design-review-runtime.json
+            ${{ runner.temp }}/design-review-conformance.json
+            ${{ runner.temp }}/design-review-conformance-replay.json
+          if-no-files-found: warn

@@ -1,0 +1,14 @@
+{
+  "schema": "gooo/design-evidence/claim-adoption-release-lock/v1",
+  "repository": "kimjooyoon/gooo-design-evidence",
+  "tag": "v0.6.0-dev",
+  "ref_type": "commit",
+  "tag_object_sha": "a37e7424c2e52bd7cdd5b14959feecbc6ef3ef0a",
+  "target_commit_sha": "a37e7424c2e52bd7cdd5b14959feecbc6ef3ef0a",
+  "asset": {
+    "id": 533657773,
+    "name": "claim-resolution-adoption-a37e7424c2e52bd7cdd5b14959feecbc6ef3ef0a.zip",
+    "size": 19633,
+    "sha256": "8e16e636aa38cfe307c791b19354361476d2b0c889b9aa551ccfd2c8dea541cc"
+  }
+}
