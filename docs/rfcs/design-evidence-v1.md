@@ -26,10 +26,11 @@ The v2 resolution is explicit: the compiler binds the exact source digest and
 complete activity identity set. `gooo-graph/v1` does not expose activity source
 spans, so source-span binding remains `NOT_AVAILABLE`.
 
-The released commands currently have different semantic depth. A URI-unsafe
-namespace can receive an `ok` syntax/check receipt and then fail graph semantic
-lowering. CI preserves this as a refuted compiler-depth counterexample rather
-than treating the earlier receipt as semantic success.
+The released commands intentionally expose different semantic depth. Default
+`check` is syntax-only; `check --semantic` and `graph dump` perform semantic
+lowering. A URI-unsafe namespace therefore closes the resolution contract only
+when syntax succeeds while both semantic commands reject it. A syntax receipt
+is never promoted into semantic evidence.
 
 Generated files never become the authority merely because they compile or have
 the same final value as a token.
