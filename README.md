@@ -7,7 +7,8 @@ values.
 
 The repository does not import the Gooo compiler source. CI downloads the
 digest-locked `v0.1.0-dev` executable and consumes only `version --json`,
-`check --json`, and `graph dump` receipts.
+syntax `check --json`, explicit `check --semantic --json`, and `graph dump`
+receipts.
 
 ## First vertical slice
 
@@ -51,8 +52,9 @@ CI also proves three counterexamples:
 - a broken DTCG alias is `REFUTED`;
 - a one-byte-equivalent release digest contradiction is `REFUTED` before any
   fallback can run.
-- a URI-unsafe namespace accepted by `check` but rejected by semantic graph
-  lowering is preserved as a compiler-depth `REFUTED` receipt.
+- a URI-unsafe namespace accepted by syntax-only `check` and rejected by both
+  explicit semantic check and graph lowering closes an exact command-resolution
+  receipt.
 
 ## Authority and evidence
 
