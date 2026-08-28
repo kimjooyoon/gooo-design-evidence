@@ -198,7 +198,7 @@ jq -S -n \
   }' > "$output/runtime.json"
 
 expected_activities=$(jq -S -c '[.cells[].activity] | sort' "$denominator")
-observed_activities=$(jq -S -c '[.nodes[] | select(.kind == "activity") | .name] | sort' "$work/graph.json")
+observed_activities=$(jq -S -c '[.nodes[] | select(.kind == "Activity") | .name] | sort' "$work/graph.json")
 meta_bound=$(jq -n --argjson expected "$expected_activities" --argjson observed "$observed_activities" \
   '$expected - ($expected - $observed) | length')
 semantic_binding_state="CLOSED"
