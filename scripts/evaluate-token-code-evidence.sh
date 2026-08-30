@@ -47,7 +47,10 @@ jq -e '
   (.automatic_remediation_authorized|type)=="boolean" and .output_scope=="CALLER_OWNED_TEMP_ONLY"
 ' "$fixture/authority.json" >/dev/null
 jq -e '.schema=="gooo/design-token-code-evidence/input-manifest/v1" and .algorithm=="sha256" and (.files|length)==5' "$fixture/manifest.json" >/dev/null
-jq -e '.schema=="gooo/design-token-code-evidence/explicit-bindings/v1" and (.bindings|length)==4' "$fixture/bindings.json" >/dev/null
+jq -e --arg scenario "$scenario" '
+  .schema=="gooo/design-token-code-evidence/explicit-bindings/v1" and
+  (if $scenario=="missing-mapping" or $scenario=="mixed" then (.bindings|length)==3 else (.bindings|length)==4 end)
+' "$fixture/bindings.json" >/dev/null
 jq -e '.["$schema"]=="https://www.designtokens.org/schemas/2025.10/format.json" and ([..|objects|select(has("$value"))]|length)==3' "$fixture/design-tokens.json" >/dev/null
 
 sha256() { sha256sum "$1" | awk '{print $1}'; }
