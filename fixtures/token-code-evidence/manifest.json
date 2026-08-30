@@ -1,0 +1,11 @@
+{
+  "schema": "gooo/design-token-code-evidence/input-manifest/v1",
+  "algorithm": "sha256",
+  "files": [
+    {"path": "design-tokens.json", "sha256": "0d009b843253981c1b06f9f2fb0a1932f3a7b9cf874f8a8b93cc48a4126da792"},
+    {"path": "component.tsx", "sha256": "0ac893390c517c16ddcd3a0aaedea726df91c2241cfc93cc4285f4dd85a80016"},
+    {"path": "service.ts", "sha256": "557a266dcac4dd47822749863662ad1b1a8cbbfcaa5a0150d96b8fa6219c7453"},
+    {"path": "bindings.json", "sha256": "f0cd702a5ec41eec4e77006215db9999b1ac52d9108cba4125dc1b25048886f3"},
+    {"path": "generated/tokens.css", "sha256": "b1cde28bcc902dc0ee51e8d7a721979d0ac78aba329266397779d404907f8d32"}
+  ]
+}

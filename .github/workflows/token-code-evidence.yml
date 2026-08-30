@@ -1,0 +1,262 @@
+name: Token and code evidence
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: token-code-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SOURCE: examples/token-code-evidence/main.gooo
+      DENOMINATOR: contracts/design-token-code-evidence-denominator-v1.json
+      FIXTURE: fixtures/token-code-evidence
+      EVALUATOR: scripts/evaluate-token-code-evidence.sh
+    steps:
+      - name: Check out exact subject
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+
+      - name: Bind exact subject identity
+        run: test "$(git rev-parse HEAD)" = "$SUBJECT_SHA"
+
+      - name: Observe Go 1.27 without running local tests
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.0'
+
+      - name: Record Go toolchain
+        run: |
+          set -euo pipefail
+          test "$(go env GOVERSION)" = "go1.27.0"
+          echo "GO_VERSION=$(go env GOVERSION)" >> "$GITHUB_ENV"
+
+      - name: Acquire digest-locked released Gooo compiler
+        run: |
+          set -euo pipefail
+          lock=contracts/core-release-lock-v3.json
+          repository=$(jq -r .repository "$lock")
+          tag=$(jq -r .tag "$lock")
+          asset_id=$(jq -r .asset.id "$lock")
+          asset_name=$(jq -r .asset.name "$lock")
+          release=$(gh api "repos/$repository/releases/tags/$tag")
+          ref=$(gh api "repos/$repository/git/ref/tags/$tag")
+          jq -e --arg tag "$tag" --arg type "$(jq -r .ref_type "$lock")" --arg sha "$(jq -r .tag_object_sha "$lock")" \
+            --arg asset "$asset_name" --argjson id "$asset_id" --slurpfile lock "$lock" '
+            .tag_name==$tag and .draft==false and
+            ([.assets[]|select(.id==$id and .name==$asset and .size==$lock[0].asset.size and
+              .digest==("sha256:"+$lock[0].asset.sha256))]|length)==1
+          ' <<<"$release" >/dev/null
+          jq -e --arg type "$(jq -r .ref_type "$lock")" --arg sha "$(jq -r .tag_object_sha "$lock")" \
+            '.object.type==$type and .object.sha==$sha' <<<"$ref" >/dev/null
+          gh api -H 'Accept: application/octet-stream' "repos/$repository/releases/assets/$asset_id" > "$RUNNER_TEMP/$asset_name"
+          printf '%s  %s\n' "$(jq -r .asset.sha256 "$lock")" "$RUNNER_TEMP/$asset_name" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/gooo"
+          tar -xzf "$RUNNER_TEMP/$asset_name" -C "$RUNNER_TEMP/gooo"
+          test -x "$RUNNER_TEMP/gooo/gooo"
+          echo "GOOO_BIN=$RUNNER_TEMP/gooo/gooo" >> "$GITHUB_ENV"
+
+      - name: Resolve the Gooo source and bind its generated semantic graph
+        run: |
+          set -euo pipefail
+          "$GOOO_BIN" version --json > "$RUNNER_TEMP/version.json"
+          "$GOOO_BIN" check --json "$SOURCE" > "$RUNNER_TEMP/syntax.json"
+          "$GOOO_BIN" check --semantic --json "$SOURCE" > "$RUNNER_TEMP/semantic.json"
+          "$GOOO_BIN" graph dump "$SOURCE" > "$RUNNER_TEMP/graph.json"
+          jq -e '.status=="ok"' "$RUNNER_TEMP/version.json" "$RUNNER_TEMP/syntax.json" "$RUNNER_TEMP/semantic.json" >/dev/null
+          expected_source_sha=$(sha256sum "$SOURCE" | awk '{print $1}')
+          jq -e --arg source_sha "$expected_source_sha" '
+            . as $graph |
+            $graph.schema_version=="gooo-graph/v1" and $graph.source_digest==$source_sha and
+            .ir.status=="available" and (.ir.semantic_digest|length)>0 and (.graph_hash|length)>0 and
+            ([$graph.nodes[]|select(.kind=="Activity")]|length)==12
+          ' "$RUNNER_TEMP/graph.json" >/dev/null
+
+      - name: Prepare isolated scenario inputs
+        run: |
+          set -euo pipefail
+          scenarios="$RUNNER_TEMP/token-code-evidence/scenarios"
+          mkdir -p "$scenarios"
+          for scenario in exact-match missing-mapping stale-token explicit-value-contradiction digest-valid-laundering mixed authority-escalation; do
+            cp -R "$FIXTURE" "$scenarios/$scenario"
+          done
+          jq 'del(.bindings[] | select(.id=="component-tone"))' \
+            "$scenarios/missing-mapping/bindings.json" > "$scenarios/missing-mapping/bindings.next"
+          mv "$scenarios/missing-mapping/bindings.next" "$scenarios/missing-mapping/bindings.json"
+          sed -i '/--space-control:/d' "$scenarios/stale-token/generated/tokens.css"
+          sed -i 's/var(--color-action)/var(--color-danger)/' \
+            "$scenarios/explicit-value-contradiction/component.tsx"
+          sed -i 's/var(--color-action)/var(--color-danger)/' \
+            "$scenarios/digest-valid-laundering/component.tsx"
+          jq 'del(.bindings[] | select(.id=="component-tone"))' \
+            "$scenarios/mixed/bindings.json" > "$scenarios/mixed/bindings.next"
+          mv "$scenarios/mixed/bindings.next" "$scenarios/mixed/bindings.json"
+          sed -i 's/var(--color-action)/var(--color-danger)/' "$scenarios/mixed/component.tsx"
+          jq '.repository_writes_authorized=true' "$scenarios/authority-escalation/authority.json" > \
+            "$scenarios/authority-escalation/authority.next"
+          mv "$scenarios/authority-escalation/authority.next" "$scenarios/authority-escalation/authority.json"
+          refresh_manifest() {
+            local dir=$1
+            jq -S -n \
+              --arg design "$(sha256sum "$dir/design-tokens.json" | awk '{print $1}')" \
+              --arg component "$(sha256sum "$dir/component.tsx" | awk '{print $1}')" \
+              --arg service "$(sha256sum "$dir/service.ts" | awk '{print $1}')" \
+              --arg bindings "$(sha256sum "$dir/bindings.json" | awk '{print $1}')" \
+              --arg css "$(sha256sum "$dir/generated/tokens.css" | awk '{print $1}')" \
+              '{schema:"gooo/design-token-code-evidence/input-manifest/v1",algorithm:"sha256",files:[
+                {path:"design-tokens.json",sha256:$design},{path:"component.tsx",sha256:$component},
+                {path:"service.ts",sha256:$service},{path:"bindings.json",sha256:$bindings},
+                {path:"generated/tokens.css",sha256:$css}]}' > "$dir/manifest.next"
+            mv "$dir/manifest.next" "$dir/manifest.json"
+          }
+          refresh_manifest "$scenarios/digest-valid-laundering"
+
+      - name: Generate and replay machine evidence plus human dossiers
+        run: |
+          set -euo pipefail
+          scenarios="$RUNNER_TEMP/token-code-evidence/scenarios"
+          results="$RUNNER_TEMP/token-code-evidence/results"
+          mkdir -p "$results"
+          run_scenario() {
+            local scenario=$1
+            local input="$scenarios/$scenario"
+            local output="$results/$scenario"
+            mkdir -p "$output"
+            local start_ns end_ns wall_ms peak_rss_kib
+            start_ns=$(date +%s%N)
+            /usr/bin/time -f '%M' -o "$output/peak-rss-kib" \
+              bash "$EVALUATOR" "$RUNNER_TEMP/graph.json" "$DENOMINATOR" "$input" \
+              "$output/stage" "$SUBJECT_SHA" "$scenario" 0 0
+            end_ns=$(date +%s%N)
+            wall_ms=$(( (end_ns-start_ns)/1000000 ))
+            peak_rss_kib=$(cat "$output/peak-rss-kib")
+            bash "$EVALUATOR" "$RUNNER_TEMP/graph.json" "$DENOMINATOR" "$input" \
+              "$output" "$SUBJECT_SHA" "$scenario" "$peak_rss_kib" "$wall_ms"
+            bash "$EVALUATOR" "$RUNNER_TEMP/graph.json" "$DENOMINATOR" "$input" \
+              "$output/replay" "$SUBJECT_SHA" "$scenario" "$peak_rss_kib" "$wall_ms"
+            cmp -s "$output/evidence.json" "$output/replay/evidence.json"
+            cmp -s "$output/dossier.md" "$output/replay/dossier.md"
+          }
+          for scenario in exact-match missing-mapping stale-token explicit-value-contradiction digest-valid-laundering mixed authority-escalation; do
+            run_scenario "$scenario"
+          done
+
+      - name: Assert the fixed denominator and all seven minimum cases
+        run: |
+          set -euo pipefail
+          results="$RUNNER_TEMP/token-code-evidence/results"
+          jq -e '
+            .schema=="gooo/design-token-code-evidence/evidence/v1" and .decision=="CLOSED" and
+            .claim.state=="CLOSED" and .summary.token_count==3 and .summary.code_binding_count==4 and
+            .summary.exact_matches==4 and .summary.unknown_bindings==0 and .summary.refuted_bindings==0 and
+            .summary.generated_artifact_files==1 and .summary.repository_writes==0 and
+            .summary.local_test_executions==0 and .summary.cross_project_required_gates==0 and
+            .inventory.root_readme_excluded==true and .evidence.resolution_precedence==["REFUTED","UNKNOWN","CLOSED"]
+          ' "$results/exact-match/evidence.json" >/dev/null
+          jq -e '
+            .decision=="UNKNOWN" and .claim.state=="UNKNOWN" and
+            .claim.reason=="EXPLICIT_MAPPING_MISSING" and .claim.unknown_class=="DIRECT_MISSING" and
+            .claim.stage=="COMPARISON" and .claim.step=="COMPARE_EXPLICIT_VALUES_AND_REFERENCES" and
+            .claim.next_operation=="PROVIDE_EXPLICIT_MAPPING" and (.claim|has("blocked_by")) and
+            .summary.exact_matches==3 and .summary.unknown_bindings==1 and .summary.refuted_bindings==0
+          ' "$results/missing-mapping/evidence.json" >/dev/null
+          jq -e '
+            .decision=="UNKNOWN" and .claim.state=="UNKNOWN" and
+            .claim.reason=="STALE_TOKEN_OUTPUT" and .claim.unknown_class=="DIRECT_MISSING" and
+            .claim.stage=="COMPARISON" and .claim.step=="COMPARE_EXPLICIT_VALUES_AND_REFERENCES" and
+            .claim.next_operation=="REGENERATE_TOKEN_OUTPUT" and (.claim|has("blocked_by")) and
+            .summary.exact_matches==3 and .summary.unknown_bindings==1 and .summary.refuted_bindings==0
+          ' "$results/stale-token/evidence.json" >/dev/null
+          jq -e '
+            .decision=="REFUTED" and .claim.state=="REFUTED" and
+            .claim.reason=="EXPLICIT_VALUE_CONTRADICTION" and .summary.exact_matches==3 and
+            .summary.unknown_bindings==0 and .summary.refuted_bindings==1
+          ' "$results/explicit-value-contradiction/evidence.json" >/dev/null
+          jq -e '
+            .decision=="REFUTED" and .claim.state=="REFUTED" and
+            .claim.reason=="DIGEST_VALID_SEMANTIC_LAUNDERING" and
+            .evidence.manifest_digest_valid==true and .summary.refuted_bindings==1
+          ' "$results/digest-valid-laundering/evidence.json" >/dev/null
+          jq -e '
+            .decision=="REFUTED" and .claim.state=="REFUTED" and .claim.reason=="MIXED_EVIDENCE_REFUTED" and
+            .claim.stage=="AGGREGATION" and .claim.step=="APPLY_REFUTED_PRECEDENCE" and
+            .summary.exact_matches==2 and .summary.unknown_bindings==1 and .summary.refuted_bindings==1 and
+            ([.relations[]|select(.state=="UNKNOWN")|
+              (has("stage") and has("step") and has("reason") and has("unknown_class") and has("next_operation") and has("blocked_by"))]|all)
+          ' "$results/mixed/evidence.json" >/dev/null
+          jq -e '
+            .decision=="REFUTED" and .claim.state=="REFUTED" and
+            .claim.reason=="AUTHORITY_ESCALATION_REFUTED" and .authority.authority_escalated==true and
+            .summary.exact_matches==4 and .summary.unknown_bindings==0 and .summary.refuted_bindings==1 and
+            .authority.repository_writes==0 and .authority.cross_project_required_gates==0
+          ' "$results/authority-escalation/evidence.json" >/dev/null
+          jq -S -n \
+            --slurpfile exact "$results/exact-match/evidence.json" \
+            --slurpfile missing "$results/missing-mapping/evidence.json" \
+            --slurpfile stale "$results/stale-token/evidence.json" \
+            --slurpfile explicit "$results/explicit-value-contradiction/evidence.json" \
+            --slurpfile laundering "$results/digest-valid-laundering/evidence.json" \
+            --slurpfile mixed "$results/mixed/evidence.json" \
+            --slurpfile authority "$results/authority-escalation/evidence.json" \
+            '{schema:"gooo/design-token-code-evidence/scenario-summary/v1",scenarios:{
+              exact_match:$exact[0],missing_mapping:$missing[0],stale_token:$stale[0],
+              explicit_value_contradiction:$explicit[0],digest_valid_laundering:$laundering[0],
+              mixed:$mixed[0],authority_escalation:$authority[0]}}' > "$RUNNER_TEMP/token-code-evidence/scenario-summary.json"
+          jq -e '[.scenarios[] | .summary.repository_writes==0 and .summary.local_test_executions==0 and
+            .summary.cross_project_required_gates==0 and .inventory.root_readme_excluded==true and
+            .performance.peak_rss_kib>0 and .performance.wall_ms>=0] | all' \
+            "$RUNNER_TEMP/token-code-evidence/scenario-summary.json" >/dev/null
+
+      - name: Publish exact human-readable dossier summary
+        run: |
+          set -euo pipefail
+          results="$RUNNER_TEMP/token-code-evidence/results"
+          {
+            echo '## Token and code evidence'
+            echo
+            jq -r '. as $r | [
+              "- exact match: \($r.decision) — \($r.summary.exact_matches)/4",
+              "- missing mapping: \(.decision)",
+              "- stale token: \(.decision)",
+              "- explicit value contradiction: \(.decision)",
+              "- digest-valid laundering: \(.decision)",
+              "- mixed precedence: \(.decision)",
+              "- authority escalation: \(.decision)"
+            ] | .[]' "$results/exact-match/evidence.json" >/dev/null
+            for scenario in exact-match missing-mapping stale-token explicit-value-contradiction digest-valid-laundering mixed authority-escalation; do
+              jq -r '"- \(.scenario): \(.decision) — exact \(.summary.exact_matches), UNKNOWN \(.summary.unknown_bindings), REFUTED \(.summary.refuted_bindings)"' \
+                "$results/$scenario/evidence.json"
+            done
+            jq -r '"- repository writes: \(.scenarios.exact_match.summary.repository_writes)", "- local test executions: \(.scenarios.exact_match.summary.local_test_executions)", "- cross-project required gates: \(.scenarios.exact_match.summary.cross_project_required_gates)"' \
+              "$RUNNER_TEMP/token-code-evidence/scenario-summary.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce zero repository writes
+        run: test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Upload machine evidence and human dossiers
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: token-code-evidence-${{ env.SUBJECT_SHA }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ${{ runner.temp }}/version.json
+            ${{ runner.temp }}/syntax.json
+            ${{ runner.temp }}/semantic.json
+            ${{ runner.temp }}/graph.json
+            ${{ runner.temp }}/token-code-evidence/scenario-summary.json
+            ${{ runner.temp }}/token-code-evidence/results

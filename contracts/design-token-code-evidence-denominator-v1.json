@@ -1,0 +1,30 @@
+{
+  "schema": "gooo/design-token-code-evidence-denominator/v1",
+  "denominator_id": "gooo.denominator.design-token-code-evidence.v1",
+  "candidate_id": "gooo.product.design-token-code-evidence.v1",
+  "total": 12,
+  "proofs": [
+    {"choice": "FOUNDATION", "total": 4},
+    {"choice": "COHERENCE", "total": 4},
+    {"choice": "REGRESSION", "total": 4}
+  ],
+  "indicator_classes": [
+    {"class": "DRIVER", "total": 4},
+    {"class": "OUTCOME", "total": 4},
+    {"class": "GUARDRAIL", "total": 4}
+  ],
+  "cells": [
+    {"ordinal": 1, "id": "AUTHORITY_BOUND", "activity": "BindEvidenceAuthority", "proof_choice": "FOUNDATION", "indicator_class": "DRIVER", "closed_reason": "READ_ONLY_AUTHORITY_BOUND"},
+    {"ordinal": 2, "id": "TOKENS_OBSERVED", "activity": "ObserveDesignTokenJSON", "proof_choice": "FOUNDATION", "indicator_class": "DRIVER", "closed_reason": "DESIGN_TOKEN_JSON_OBSERVED"},
+    {"ordinal": 3, "id": "CODE_OBSERVED", "activity": "ObserveServiceComponentCode", "proof_choice": "FOUNDATION", "indicator_class": "DRIVER", "closed_reason": "SERVICE_COMPONENT_CODE_OBSERVED"},
+    {"ordinal": 4, "id": "BINDINGS_OBSERVED", "activity": "ObserveExplicitBindingLedger", "proof_choice": "FOUNDATION", "indicator_class": "DRIVER", "closed_reason": "EXPLICIT_BINDING_LEDGER_OBSERVED"},
+    {"ordinal": 5, "id": "SEMANTIC_GRAPH_BOUND", "activity": "BindReleasedSemanticGraph", "proof_choice": "COHERENCE", "indicator_class": "OUTCOME", "closed_reason": "RELEASED_SEMANTIC_GRAPH_BOUND"},
+    {"ordinal": 6, "id": "EXACT_MATCH", "activity": "EvaluateExactValueAndReferenceMatch", "proof_choice": "COHERENCE", "indicator_class": "OUTCOME", "closed_reason": "EXACT_MATCH_CLOSED"},
+    {"ordinal": 7, "id": "MISSING_MAPPING_UNKNOWN", "activity": "PreserveMissingMappingUnknown", "proof_choice": "COHERENCE", "indicator_class": "OUTCOME", "closed_reason": "MISSING_MAPPING_UNKNOWN_PRESERVED"},
+    {"ordinal": 8, "id": "STALE_TOKEN_UNKNOWN", "activity": "PreserveStaleTokenUnknown", "proof_choice": "COHERENCE", "indicator_class": "OUTCOME", "closed_reason": "STALE_TOKEN_UNKNOWN_PRESERVED"},
+    {"ordinal": 9, "id": "VALUE_CONTRADICTION_REFUTED", "activity": "RefuteExplicitValueContradiction", "proof_choice": "REGRESSION", "indicator_class": "GUARDRAIL", "closed_reason": "EXPLICIT_VALUE_CONTRADICTION_REFUTED"},
+    {"ordinal": 10, "id": "DIGEST_LAUNDERING_REFUTED", "activity": "RefuteDigestValidLaundering", "proof_choice": "REGRESSION", "indicator_class": "GUARDRAIL", "closed_reason": "DIGEST_VALID_LAUNDERING_REFUTED"},
+    {"ordinal": 11, "id": "MIXED_PRECEDENCE_REFUTED", "activity": "RefuteMixedEvidence", "proof_choice": "REGRESSION", "indicator_class": "GUARDRAIL", "closed_reason": "REFUTED_PRECEDENCE_OVER_UNKNOWN"},
+    {"ordinal": 12, "id": "AUTHORITY_ESCALATION_REFUTED", "activity": "RefuteAuthorityEscalation", "proof_choice": "REGRESSION", "indicator_class": "GUARDRAIL", "closed_reason": "AUTHORITY_ESCALATION_REFUTED"}
+  ]
+}
