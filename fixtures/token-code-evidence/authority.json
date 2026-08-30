@@ -1,0 +1,12 @@
+{
+  "schema": "gooo/design-token-code-evidence/authority/v1",
+  "source_of_truth": "GOOO_SOURCE_AND_RELEASED_SEMANTIC_GRAPH",
+  "source": "examples/token-code-evidence/main.gooo",
+  "matching_mode": "EXPLICIT_VALUES_AND_REFERENCES_ONLY",
+  "read_only": true,
+  "repository_writes_authorized": false,
+  "automatic_remediation_authorized": false,
+  "live_design_tool_required": false,
+  "cross_project_required_gates": 0,
+  "output_scope": "CALLER_OWNED_TEMP_ONLY"
+}

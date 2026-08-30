@@ -1,0 +1,5 @@
+:root {
+  --color-brand: rgb(20 99 255);
+  --color-action: var(--color-brand);
+  --space-control: 8px;
+}

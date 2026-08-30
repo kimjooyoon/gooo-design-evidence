@@ -1,0 +1,29 @@
+{
+  "schema": "gooo/design-token-code-evidence/explicit-bindings/v1",
+  "bindings": [
+    {
+      "id": "component-tone",
+      "design": {"kind": "COMPONENT_PROPERTY", "locator": "Button.tone=Brand", "value": "brand"},
+      "code": {"kind": "CODE_PROPERTY", "locator": "ButtonProps.tone=brand", "value": "brand"},
+      "relation": "IMPLEMENTED_BY"
+    },
+    {
+      "id": "component-background-token",
+      "design": {"kind": "DTCG_TOKEN", "locator": "/color/action", "value": "{color.brand}"},
+      "code": {"kind": "CODE_REFERENCE", "locator": "Button.background=var(--color-action)", "value": "var(--color-action)"},
+      "relation": "USED_BY"
+    },
+    {
+      "id": "service-action-token",
+      "design": {"kind": "DTCG_TOKEN", "locator": "/color/action", "value": "{color.brand}"},
+      "code": {"kind": "CODE_REFERENCE", "locator": "ButtonContract.actionToken=color.action", "value": "color.action"},
+      "relation": "USED_BY"
+    },
+    {
+      "id": "component-padding-token",
+      "design": {"kind": "DTCG_TOKEN", "locator": "/space/control", "value": {"value": 8, "unit": "px"}},
+      "code": {"kind": "CODE_REFERENCE", "locator": "Button.padding=var(--space-control)", "value": "var(--space-control)"},
+      "relation": "USED_BY"
+    }
+  ]
+}

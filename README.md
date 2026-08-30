@@ -105,3 +105,24 @@ reviewed MISMATCH can be known and closed, while an unresolved contradiction
 cannot. All twelve matcher acceptance cells are declared in
 `examples/design-code-match/main.gooo` and bound through the released Gooo
 semantic graph.
+
+## Token and code evidence example
+
+The independent `token-code-evidence` vertical slice compares a small DTCG
+token JSON document with explicit references in a service and a Button
+component. It produces a machine-readable `evidence.json` and a human-facing
+`dossier.md` in the caller-owned Actions temporary directory. The `.gooo`
+source and its released semantic graph are authoritative; the comparison is
+read-only and never infers or repairs design intent.
+
+Its fixed denominator is twelve cells bound one-to-one to twelve Gooo
+activities: FOUNDATION/COHERENCE/REGRESSION are 4/4/4 and
+DRIVER/OUTCOME/GUARDRAIL are 4/4/4. CI proves exact match CLOSED, missing
+mapping UNKNOWN, stale token UNKNOWN, explicit value contradiction REFUTED,
+digest-valid semantic laundering REFUTED, mixed REFUTED precedence, and
+authority escalation REFUTED. UNKNOWN preserves stage, step, reason,
+unknown_class, next_operation, and blocked_by; REFUTED takes precedence over
+UNKNOWN.
+
+See `docs/rfcs/token-code-evidence-v1.md` and
+`examples/token-code-evidence/main.gooo` for the complete contract.

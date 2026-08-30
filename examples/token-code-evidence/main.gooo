@@ -1,0 +1,28 @@
+package tokencodeevidence
+namespace tokencodeevidence
+
+entity EvidenceAuthority id "design://token-code-evidence/authority"
+entity DesignTokenJSON id "design://token-code-evidence/input/design-tokens"
+entity ServiceComponentCode id "design://token-code-evidence/input/service-component-code"
+entity ExplicitBindingLedger id "design://token-code-evidence/input/bindings"
+entity ReleasedSemanticGraph id "gooo://token-code-evidence/released-semantic-graph"
+entity ExactMatchEvidence id "design://token-code-evidence/evidence/exact-match"
+entity MissingMappingUnknown id "design://token-code-evidence/evidence/missing-mapping"
+entity StaleTokenUnknown id "design://token-code-evidence/evidence/stale-token"
+entity ExplicitValueContradiction id "design://token-code-evidence/evidence/value-contradiction"
+entity DigestValidLaundering id "design://token-code-evidence/evidence/digest-valid-laundering"
+entity MixedEvidenceRefutation id "design://token-code-evidence/evidence/mixed-refutation"
+entity AuthorityEscalationRefutation id "design://token-code-evidence/evidence/authority-escalation"
+
+activity BindEvidenceAuthority(EvidenceAuthority) -> ExactMatchEvidence computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=READ_ONLY_AUTHORITY_BOUND;unknown_class=NONE;next_operation=NONE"
+activity ObserveDesignTokenJSON(DesignTokenJSON) -> ExactMatchEvidence computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=DESIGN_TOKEN_JSON_OBSERVED;unknown_class=NONE;next_operation=NONE"
+activity ObserveServiceComponentCode(ServiceComponentCode) -> ExactMatchEvidence computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=SERVICE_COMPONENT_CODE_OBSERVED;unknown_class=NONE;next_operation=NONE"
+activity ObserveExplicitBindingLedger(ExplicitBindingLedger) -> ExactMatchEvidence computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=EXPLICIT_BINDING_LEDGER_OBSERVED;unknown_class=NONE;next_operation=NONE"
+activity BindReleasedSemanticGraph(ReleasedSemanticGraph) -> ExactMatchEvidence computes "claim.resolve:v1;state=CLOSED;stage=NONE;step=NONE;reason=RELEASED_SEMANTIC_GRAPH_BOUND;unknown_class=NONE;next_operation=NONE"
+activity EvaluateExactValueAndReferenceMatch(ExactMatchEvidence) -> ExactMatchEvidence computes "claim.resolve:v1;state=CLOSED;stage=COMPARISON;step=COMPARE_EXPLICIT_VALUES_AND_REFERENCES;reason=EXACT_MATCH_CLOSED;unknown_class=NONE;next_operation=NONE"
+activity PreserveMissingMappingUnknown(MissingMappingUnknown) -> MissingMappingUnknown computes "claim.resolve:v1;state=UNKNOWN;stage=COMPARISON;step=COMPARE_EXPLICIT_VALUES_AND_REFERENCES;reason=EXPLICIT_MAPPING_MISSING;unknown_class=DIRECT_MISSING;next_operation=PROVIDE_EXPLICIT_MAPPING"
+activity PreserveStaleTokenUnknown(StaleTokenUnknown) -> StaleTokenUnknown computes "claim.resolve:v1;state=UNKNOWN;stage=GENERATED_OUTPUT;step=COMPARE_GENERATED_TOKEN_OUTPUT;reason=STALE_TOKEN_OUTPUT;unknown_class=DIRECT_MISSING;next_operation=REGENERATE_TOKEN_OUTPUT"
+activity RefuteExplicitValueContradiction(ExplicitValueContradiction) -> ExplicitValueContradiction computes "claim.resolve:v1;state=REFUTED;stage=COMPARISON;step=COMPARE_EXPLICIT_VALUES_AND_REFERENCES;reason=EXPLICIT_VALUE_CONTRADICTION;unknown_class=NONE;next_operation=REPAIR_EXPLICIT_VALUE_OR_REFERENCE"
+activity RefuteDigestValidLaundering(DigestValidLaundering) -> DigestValidLaundering computes "claim.resolve:v1;state=REFUTED;stage=COMPARISON;step=COMPARE_EXPLICIT_VALUES_AND_REFERENCES;reason=DIGEST_VALID_SEMANTIC_LAUNDERING;unknown_class=NONE;next_operation=REJECT_DIGEST_ONLY_MATCH"
+activity RefuteMixedEvidence(MixedEvidenceRefutation) -> MixedEvidenceRefutation computes "claim.resolve:v1;state=REFUTED;stage=AGGREGATION;step=APPLY_REFUTED_PRECEDENCE;reason=MIXED_EVIDENCE_REFUTED;unknown_class=NONE;next_operation=RESOLVE_REFUTED_BINDINGS"
+activity RefuteAuthorityEscalation(AuthorityEscalationRefutation) -> AuthorityEscalationRefutation computes "claim.resolve:v1;state=REFUTED;stage=AUTHORITY;step=VERIFY_READ_ONLY_AUTHORITY;reason=AUTHORITY_ESCALATION_REFUTED;unknown_class=NONE;next_operation=REMOVE_AUTHORITY_ESCALATION"
