@@ -151,7 +151,7 @@ jq -S -n \
      else if $scenario=="stale-token" then unknown("component-padding-token";"DESIGN:/space/control";
        "CODE:Button.padding=var(--space-control)";"STALE_TOKEN_OUTPUT";"REGENERATE_TOKEN_OUTPUT";["generated/tokens.css"])
      else unknown("component-padding-token";"DESIGN:/space/control";
-       "EXPLICIT_MAPPING_MISSING";"PROVIDE_EXPLICIT_MAPPING";[]) end end),
+       "CODE:Button.padding=var(--space-control)";"EXPLICIT_MAPPING_MISSING";"PROVIDE_EXPLICIT_MAPPING";[]) end end),
     (if $authority then refuted("authority";"AUTHORITY:read_only=true";"AUTHORITY:repository_writes=0";
        "AUTHORITY_ESCALATION_REFUTED";"REMOVE_AUTHORITY_ESCALATION";"AUTHORITY";"VERIFY_READ_ONLY_AUTHORITY";["authority.json"])
      else empty end)
